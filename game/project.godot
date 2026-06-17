@@ -1,0 +1,44 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
+config_version=5
+
+[application]
+
+config/name="War"
+config/description="A hypercasual spin on the classic card game War — flip-to-compare, tie-breaking WARs, and collectible Special Cards. Godot 4.6 client with a deterministic rules engine validated by an authoritative server."
+run/main_scene="res://ui/boot.tscn"
+config/features=PackedStringArray("4.6", "GL Compatibility")
+config/icon="res://icon.svg"
+
+[autoload]
+
+; Deterministic-state debug + LLM control surface (see game/mcp_game_api.gd).
+WarDebug="*res://game/mcp_game_api.gd"
+; Cross-screen UI state (currency, profile, settings mirror).
+GameState="*res://ui/game_state.gd"
+; Scene/screen router for the meta shell.
+UiRouter="*res://ui/router/app_router.gd"
+
+[display]
+
+window/size/viewport_width=720
+window/size/viewport_height=1560
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+window/handheld/orientation="portrait"
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/editor_tool_kit/plugin.cfg")
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+textures/vram_compression/import_etc2_astc=true

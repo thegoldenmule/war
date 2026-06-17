@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "cards": [
+    {
+      "id": "peek",
+      "name": "Scrying Peek",
+      "when": "pre_flip",
+      "desc": "Before the flip, glimpse your own top card (reveals it face-up early). Pure information; does not change deck order."
+    },
+    {
+      "id": "rank_boost",
+      "name": "Rank Surge",
+      "when": "post_flip",
+      "desc": "After the flip, add +2 to the rank of your revealed card for this round's comparison only (does not persist on the card)."
+    },
+    {
+      "id": "steal_tie",
+      "name": "Tie Thief",
+      "when": "post_flip",
+      "desc": "If this round is a tie, you win the pot outright instead of triggering a WAR."
+    }
+  ]
+}

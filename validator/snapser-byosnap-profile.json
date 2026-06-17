@@ -1,0 +1,55 @@
+{
+  "$schema": "https://snapser.com/schemas/byosnap-profile.v1.json",
+  "name": "byosnap-validator",
+  "description": "War authoritative validation service. Validates client-predicted game-state transitions against the deterministic parity engine; ACKs matching predicted hashes (optimistic fast path) or returns the authoritative canonical-JSON state on mismatch.",
+  "version": "0.1.0",
+  "language": "typescript",
+  "runtime": "bun",
+  "base_path": "/v1/byosnap-validator",
+  "ports": {
+    "http": {
+      "port": 8080,
+      "protocol": "http"
+    },
+    "grpc": {
+      "port": 8081,
+      "protocol": "grpc"
+    }
+  },
+  "health": {
+    "path": "/health",
+    "port": 8080,
+    "initial_delay_seconds": 10,
+    "period_seconds": 15,
+    "timeout_seconds": 3,
+    "failure_threshold": 3
+  },
+  "grpc": {
+    "package": "war.validator.v1",
+    "service": "ValidatorService",
+    "proto": "protos/war/validator/v1/validator.proto",
+    "methods": [
+      "InitMatch",
+      "ValidateAction",
+      "CompleteMatch"
+    ]
+  },
+  "transport": {
+    "hermes": {
+      "envelope_proto": "protos/hermes/hermes_envelope.proto",
+      "message_type": "snap-api-proxy",
+      "note": "Client traffic arrives as Hermes ClientMessage/ServerMessage envelopes. The snap-api-proxy message type wraps a method name + payload bytes that map to ValidatorService RPCs. Locally the same envelope is served at ws://localhost:5555/hermes/ws?token=<player-id>."
+    }
+  },
+  "auth": {
+    "model": "gateway-stamped-user-id",
+    "header": "User-Id",
+    "note": "Snapser gateway stamps an authenticated User-Id bound to player_id. Locally the ?token= query param is the self-stamped player id."
+  },
+  "env": [
+    { "name": "HTTP_PORT", "value": "8080" },
+    { "name": "GRPC_PORT", "value": "8081" },
+    { "name": "STATE_VERSION", "value": "1" },
+    { "name": "CARD_CATALOG_PATH", "value": "./content/card_catalog.json" }
+  ]
+}

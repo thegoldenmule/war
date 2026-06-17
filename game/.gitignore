@@ -1,0 +1,12 @@
+# Godot 4+ editor cache / imported assets (regenerated on open).
+.godot/
+.import/
+export.cfg
+export_presets.cfg.bak
+
+# Mono/.NET (unused, but ignore if ever added)
+.mono/
+data_*/
+
+# OS cruft
+.DS_Store

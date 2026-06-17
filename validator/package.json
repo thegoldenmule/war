@@ -1,0 +1,21 @@
+{
+  "name": "war-validator",
+  "private": true,
+  "type": "module",
+  "description": "War — authoritative server-side validation service. Bun workspace root. The hash domain (game state + actions) travels as canonical-JSON strings; the TS engine under src/logic is byte-for-byte parity with the GDScript engine in ../game/logic.",
+  "workspaces": [
+    "src/*"
+  ],
+  "scripts": {
+    "dev": "cd src/validator && bun run dev",
+    "start": "cd src/validator && bun run start",
+    "build": "cd src/logic && bun run build",
+    "test": "cd src/logic && bun run test",
+    "type-check": "tsc --noEmit -p src/logic/tsconfig.json && tsc --noEmit -p src/validator/tsconfig.json",
+    "gen:proto": "bash ../tools/gen-protos.sh"
+  },
+  "devDependencies": {
+    "protobufjs-cli": "^1.1.3",
+    "typescript": "^5.5.0"
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://thegoldenmule.com/war/schemas/card_catalog.schema.json",
+  "title": "War Special Cards Catalog",
+  "description": "Canonical catalog of collectible Special Cards. Consumed by the validator (authoritative effect resolution) and baked into a client copy. Card `id`s are the stable keys used in state.specials.{player,cpu} and the play_special{id} action.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "cards"],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Catalog schema/content version. Bump on any breaking change to card ids or effects."
+    },
+    "cards": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/card" }
+    }
+  },
+  "definitions": {
+    "card": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "when", "desc"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "Stable identifier (snake_case). Used in state.specials and play_special{id}."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Display name shown in the UI."
+        },
+        "when": {
+          "type": "string",
+          "enum": ["pre_flip", "post_flip"],
+          "description": "The flip-moment timing window in which the card may be played and its effect resolves inside the deterministic engine."
+        },
+        "desc": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Player-facing description of the effect."
+        }
+      }
+    }
+  }
+}

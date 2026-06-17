@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+bun.lockb
+
+# Local env
+.env
+.env.local
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# Logs
+*.log
+
+# OS
+.DS_Store

@@ -1,0 +1,28 @@
+# Keep the image small and the build context clean.
+# NOTE: the build context is validator/ (this directory) so that the Bun
+# workspace resolves `workspace:*` deps across src/* — do NOT narrow it past
+# the workspace root or cross-package linking breaks.
+
+node_modules/
+**/node_modules/
+.bun/
+
+dist/
+build/
+*.tsbuildinfo
+
+.env
+.env.local
+*.local
+
+.git/
+.gitignore
+.dockerignore
+Dockerfile
+
+.DS_Store
+*.log
+.idea/
+.vscode/
+
+README.md

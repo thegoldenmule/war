@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+.mcp.json
+
+# TypeScript / bundler output.
+# NOTE: validator/src/logic/dist is intentionally COMMITTED — it is the prebuilt
+# deterministic-logic bundle the validator loads at runtime and the source of truth
+# for golden vectors, so the service runs without a build step. Everything else under
+# a dist/ is build output and ignored.
+dist/
+!validator/src/logic/dist/
+!validator/src/logic/dist/**
+
+# Env / secrets — never commit real keys (see .env.example)
+.env
+.env.*
+!.env.example
+
+# Client export artifacts
+build/
+
+# Godot editor cache.
+# NOTE: the Godot project lives in game/ and carries its own game/.gitignore for
+# its res:// specifics (.godot/, export artifacts, *.import handling). This entry is
+# a workspace-wide safety net.
+.godot/
+
+# macOS
+.DS_Store

@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+.bun/
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+# ...except the prebuilt deterministic-logic bundle: it is intentionally COMMITTED so
+# the validator runs without a build step and serves as the golden-vector source of truth.
+!src/logic/dist/
+!src/logic/dist/**
+
+# Generated proto bindings (regenerate with tools/gen-protos.sh)
+src/**/gen/
+**/*_pb.js
+**/*_pb.d.ts
+
+# Local environment
+.env
+.env.local
+*.local
+
+# Editor / OS noise
+.DS_Store
+*.log
+.idea/
+.vscode/

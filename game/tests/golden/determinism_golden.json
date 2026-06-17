@@ -1,0 +1,27 @@
+{
+  "seed": "WAR-PARITY-1",
+  "comment": "Generated from the canonical TS dist scenario (validator/src/logic/tools/parity-dump.ts): new_game(seed) then start_round/flip/resolve x3. Per-step state hashes; index 0 = after new_game. Do not hand-edit; regenerate from the TS side.",
+  "script": [
+    "start_round",
+    "flip",
+    "resolve",
+    "start_round",
+    "flip",
+    "resolve",
+    "start_round",
+    "flip",
+    "resolve"
+  ],
+  "hashes": [
+    "47238e96656ef79408bdec015321d5c985e8530ec2dd691b5a03da3a7be0cda8",
+    "7cebddc98a64768b58cc901e07970e56ff6bb111254a9b0414fc29e5841f3677",
+    "afeda2181f4e477626418f63794c712b3e6a4e70e345647d2283d59c9be0c90a",
+    "d2660eca1fea49486f970bb56386557dcc3052c2dbfd68cfec03d9eefbe0cd5c",
+    "f115098fa7f495b13206d2c4a28028fc2dfdabb7df9295aab97c248ba41f311d",
+    "120ab5d288cf27d092174c3df2a3560553d8534a38fd69577e03da767be0cde4",
+    "b2a15f16f714c5d4744ebd41aa6517093a1c544e93ad6a5b6703db7abbe0cee8",
+    "766ada7117ecc6f36635db86623c49bee9bfac79ce9a966ca9fc254dc41f31df",
+    "c9961f59b29be3d75c688e442ccc580ce09055512d7d6b5e0403dc7dfbe0cfeb",
+    "cb305ad6b4db64d47b14ad41b07cd7095b98544e199d6a5bc603db7a7be0cee8"
+  ]
+}
