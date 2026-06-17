@@ -6,7 +6,7 @@ filled in behind `# TODO(skeleton):` markers as Phase 2 (playable single-player)
 ## What lives here
 
 - **Card faces** — 52 standard cards (ranks 2..14 × clubs/diamonds/hearts/spades). One per
-  rank+suit, drawn in the occult-arcade style.
+  rank+suit, drawn in the reference casual card-game style.
 - **Card backs** — the face-down back shown during the deal and the flip moment (the moment a
   Special Card is played before the reveal).
 - **Special Card art** — collectible power-up faces (peek, steal-tie, rank-boost, …), the
@@ -15,10 +15,13 @@ filled in behind `# TODO(skeleton):` markers as Phase 2 (playable single-player)
 
 ## Style
 
-Occult-arcade: violet accent `#b400ff` (hover `#d24bff`) on near-black `#13111c`, green `#44ff88`
-for selection, white for peak emphasis. Mirror the `editor_tool_kit` palette wherever UI is
-drawn. Portrait orientation (720×1560), GL Compatibility renderer — keep textures lightweight and
-hypercasual-readable at phone size.
+Casual card-game look from the reference prototype (`~/projects/thirdparty/War/docs`): a neutral
+gray table `#9e9e9e`, steel-blue card backs `#5b7fb0`, off-white faces `#f4f4f4` with black
+ink/borders `#1a1a1a`, an orange accent `#ee7e2d` for the primary action, and green/red
+(`#3fa34d`/`#c0392b`) win-loss outlines, with white modal banners. The single source of truth is
+`ui/ui_palette.gd` (`WarPalette`) — match it wherever UI is drawn. This is the GAME look, distinct
+from the vendored `editor_tool_kit`'s violet *editor* theme. Portrait (720×1560), GL Compatibility
+renderer — keep textures lightweight and hypercasual-readable at phone size.
 
 ## Conventions
 

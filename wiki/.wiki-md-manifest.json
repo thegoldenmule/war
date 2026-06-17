@@ -1,6 +1,6 @@
 {
   "ws:mqia7lmo-000o-afo5re": {
-    "version": 511,
+    "version": 522,
     "files": {
       "game-war/architecture/index.md": "a8dbc2248926c3a757dcdfe5f1cac0b0d79f86e87c4f54a9c8114f3611dcae70",
       "game-war/features/index.md": "fafc6e3dbb95a9c0ef96faad1aee87aeba6a6ec18a807381b882ca72ea909dcc",
@@ -15,8 +15,8 @@
       "game-war/architecture/client/match-controller.md": "54647b1b34cc4f56c2da88e5ff9443f3fd7427b48c9f2298cf6c9237a4f5f1a0",
       "game-war/architecture/client/validator-client.md": "54595a3d0af0271bdfe70b1c53556375160b23cbb8287549342e6ce2f9ce5b79",
       "game-war/architecture/client/special-cards.md": "8de1427b2264049118000169dd1bfddff319433558d55f6fb125697b2d526633",
-      "game-war/architecture/client/presentation-vfx.md": "883eef7b0cfb7cfdeab038c2d5e552567626a649b867ce0acdc364a49cc10f0e",
-      "game-war/architecture/client/ui-meta-shell.md": "8aedc5cbe99e9626545b12fdf8f89f6705ad85a54aeb52cbf5b3375459731240",
+      "game-war/architecture/client/presentation-vfx.md": "31148751bc9fbddb0c25cfdca7d21bbb193ecba62c651c77d78e1967765cefdb",
+      "game-war/architecture/client/ui-meta-shell.md": "07f1e779c3dfbda5696bba1b59da19799fb1a4c2fd7c9a8d7fa16c0195d8d69c",
       "game-war/architecture/client/editor-tool-framework.md": "6cdc5d22d3e816dfdc272b6061bb6e16b220a1f4758d7f9a8834cbacb4612814",
       "game-war/architecture/client/build-distribution.md": "b2c27682eeb9fa2a5fb2c45c2c92f19f59683e3501bceebbe64c44bc7ce1abcb",
       "game-war/architecture/validator/realtime-gateway-hermes.md": "9f245545ea63bbb8cf6e8080afd2462be66d305d12ffe4a7a8f03d513ff2c4d8",

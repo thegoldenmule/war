@@ -46,8 +46,10 @@ runs fully offline; no backend required.
 | New Game | Deal a fresh 52-card match from a new seed (`new_game`) |
 | `V` | Connect to the local validator (online validation) |
 
-Occult-arcade palette: violet accent `#b400ff` (hover `#d24bff`) on near-black `#13111c`,
-green `#44ff88` for selection, white for peak emphasis.
+Visual style (see `ui/ui_palette.gd`, `WarPalette`) — a casual card-game look from the
+reference prototype: a neutral gray table `#9e9e9e`, steel-blue card backs `#5b7fb0`,
+off-white faces `#f4f4f4` with black ink/borders `#1a1a1a`, an orange accent `#ee7e2d`
+for the primary action, and green/red (`#3fa34d`/`#c0392b`) win-loss card outlines.
 
 ## Online play against the validator (optional)
 
@@ -87,7 +89,7 @@ ui/
   screens/, shell/    meta-shell screens + chrome
 tests/                McpTestSuite parity tests + tests/golden/ (vectors from the TS dist)
 tools/                headless verifiers (verify_*.gd) and smokes
-assets/               card faces/backs + occult-arcade art (see assets/README.md)
+assets/               card faces/backs + casual card-game art (see assets/README.md)
 addons/               vendored editor_tool_kit (do not modify)
 ```
 

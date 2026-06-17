@@ -49,7 +49,7 @@ ui/      boot.tscn/.gd (main scene), game_state.gd (GameState autoload),
           router/app_router.gd (UiRouter autoload), screens/, shell/.
 tests/   McpTestSuite parity tests; tests/golden/ holds vectors + their generators.
 tools/   verify_*.gd headless parity verifiers + smokes.
-assets/  card faces/backs + occult-arcade art (placeholder; see assets/README.md).
+assets/  card faces/backs + casual card-game art (placeholder; see assets/README.md).
 addons/  vendored editor_tool_kit — DO NOT modify or add anything under here.
 ```
 

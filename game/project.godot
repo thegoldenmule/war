@@ -18,11 +18,8 @@ config/icon="res://icon.svg"
 
 [autoload]
 
-; Deterministic-state debug + LLM control surface (see game/mcp_game_api.gd).
 WarDebug="*res://game/mcp_game_api.gd"
-; Cross-screen UI state (currency, profile, settings mirror).
 GameState="*res://ui/game_state.gd"
-; Scene/screen router for the meta shell.
 UiRouter="*res://ui/router/app_router.gd"
 
 [display]
