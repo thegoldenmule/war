@@ -106,6 +106,13 @@ func _run() -> String:
 		if Director._is_decision_beat(ab):
 			return "_is_decision_beat(%d) should be false" % ab
 
+	# --- _is_gated_beat: only the WAR reveal awaits a tap (no auto-timer) -------------
+	if not Director._is_gated_beat(B.WAR_REVEALING):
+		return "_is_gated_beat(WAR_REVEALING) should be true (the reveal must await CONTINUE)"
+	for ng in [B.DEAL_PROMPT, B.DRAWING, B.FLIP_MOMENT, B.REVEALING, B.ROUND_RESULT, B.WAR_BANNER, B.WAR_PROMPT, B.GAME_OVER, B.BOOT]:
+		if Director._is_gated_beat(ng):
+			return "_is_gated_beat(%d) should be false" % ng
+
 	return ""
 
 

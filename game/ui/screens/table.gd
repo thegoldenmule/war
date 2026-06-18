@@ -32,6 +32,7 @@ const TopBar := preload("res://ui/shell/top_bar.gd")
 const AdBanner := preload("res://ui/shell/ad_banner.gd")
 const MenuPanel := preload("res://ui/shell/menu_panel.gd")
 const SafeArea := preload("res://ui/shell/safe_area.gd")
+const SpecialCarousel := preload("res://ui/modals/special_card_carousel.gd")
 const HermesClient := preload("res://net/hermes_client.gd")
 const SnapserAuth := preload("res://net/snapser_auth.gd")
 const ValidatorClient := preload("res://net/validator_client.gd")
@@ -44,6 +45,21 @@ const BADGE_FONT := 40
 const CARD_ASPECT := 0.72                  # ~5:7 playing-card ratio
 const ACTION_BTN_HEIGHT := 132             # chunky primary CTAs (the mockup's tall buttons)
 const ACTION_BTN_BOTTOM_GAP := 48          # gap below the buttons so they aren't flush to the edge
+
+# ── Deferred war-screen hooks (see the Act-of-War plan) ───────────────────────--
+# The "IT'S WAR!" mock shows a BET wager and a war-time USE SPECIAL. Both are
+# intentionally OUT of scope this pass: BET is an economy/meta-layer feature the
+# determinism contract keeps OUT of the hashed state (the deferred "WAR betting
+# stub"), and a war-time special is a hash-domain engine change (new card + parity
+# vectors) that is still an open question. The rows are BUILT (so the modal matches
+# the mock and the seams are obvious) but kept hidden behind these flags until those
+# features land — flip a flag to reveal the laid-out row.
+const WAR_BET_ENABLED := false             # economy wager row in the IT'S WAR modal
+const WAR_SPECIAL_ENABLED := false         # war-time USE SPECIAL row in the IT'S WAR modal
+const WAR_BET_STARS := 70                   # placeholder wager shown on the (hidden) BET row
+# Footprint of the small staked cards in the I-DECLARE-WAR reveal (3 backs + 1 decider).
+const WAR_STAKE_BACK_SIZE := Vector2(48, 66)
+const WAR_DECIDER_SIZE := Vector2(72, 100)
 
 ## Local validator Hermes endpoint reached by pressing V (dev affordance). The
 ## deployed build would point this at the Snapser gateway.
@@ -91,7 +107,21 @@ var _player_win_lbl: Label = null
 var _special_button: Button = null
 var _action_button: Button = null
 var _fly: Control = null
+# War screens (two panels under ONE _war_overlay container so the z-order contract
+# `_fly < _war_overlay < _result_overlay < _skip_catcher` still holds with one ref):
+#   prompt panel = the "IT'S WAR!" modal (WAR_BANNER → WAR_PROMPT);
+#   reveal panel = the "I DECLARE WAR!" stake reveal (WAR_REVEALING).
 var _war_overlay: Control = null
+var _war_prompt_panel: Panel = null
+var _war_reveal_panel: Panel = null
+var _war_declare_button: Button = null
+var _war_bet_button: Button = null          # deferred (WAR_BET_ENABLED); built, hidden
+var _war_special_button: Button = null      # deferred (WAR_SPECIAL_ENABLED); built, hidden
+var _war_continue_button: Button = null
+var _war_reveal_cpu_row: HBoxContainer = null
+var _war_reveal_you_row: HBoxContainer = null
+var _war_reveal_tween: Tween = null
+var _special_modal: SpecialCarousel = null
 var _result_overlay: Control = null
 var _result_label: Label = null
 var _skip_catcher: Button = null
@@ -264,6 +294,14 @@ func _build_ui() -> void:
 	_skip_catcher.pressed.connect(_on_skip_pressed)
 	add_child(_skip_catcher)
 
+	# ── Special-card carousel: the full-screen USE SPECIAL modal (top-most; hidden
+	# until the flip moment's USE SPECIAL opens it over the playable specials). It only
+	# opens on an unlocked FLIP_MOMENT, when the skip-catcher is hidden, so the two never
+	# contend for input.
+	_special_modal = SpecialCarousel.new()
+	_special_modal.special_selected.connect(_on_special_selected)
+	add_child(_special_modal)
+
 
 ## Build one player's board row: a small count badge, then the BIG central flip card
 ## (kept to a playing-card aspect by an AspectRatioContainer so it grows to fill the
@@ -318,6 +356,11 @@ func _spacer(h: int) -> Control:
 
 # ── Overlays ────────────────────────────────────────────────────────────────--
 
+## The WAR screens: ONE full-screen overlay holding the two mock states — the
+## "IT'S WAR!" prompt (WAR_BANNER → WAR_PROMPT) and the "I DECLARE WAR!" stake reveal
+## (WAR_REVEALING). `_on_beat` shows the overlay and picks the panel; the scrim is STOP
+## so the dimmed board beneath is untappable during a war. Kept under a single
+## `_war_overlay` ref so the z-order contract (fly < war < result < skip) still holds.
 func _build_war_overlay() -> Control:
 	var overlay := Control.new()
 	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -326,22 +369,119 @@ func _build_war_overlay() -> Control:
 	var dim := ColorRect.new()
 	dim.color = WarPalette.SCRIM
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	dim.mouse_filter = Control.MOUSE_FILTER_STOP   # block the board beneath during a war
 	overlay.add_child(dim)
-	var banner := Panel.new()
-	banner.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	banner.custom_minimum_size = Vector2(300, 120)
-	banner.add_theme_stylebox_override("panel", WarPalette.box(WarPalette.PANEL_HI, WarPalette.ACCENT, 4))
-	var cry := Label.new()
-	cry.text = "I. DECLARE. WAR."
-	cry.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	cry.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	cry.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	cry.add_theme_color_override("font_color", WarPalette.ACCENT_DEEP)
-	cry.add_theme_font_size_override("font_size", 38)
-	banner.add_child(cry)
-	overlay.add_child(banner)
+	_war_prompt_panel = _build_war_prompt_panel()
+	overlay.add_child(_war_prompt_panel)
+	_war_reveal_panel = _build_war_reveal_panel()
+	overlay.add_child(_war_reveal_panel)
 	return overlay
+
+
+## The "IT'S WAR!" modal: banner + the (deferred) BET wager + the (deferred) war-time
+## USE SPECIAL + the DECLARE WAR commit. DECLARE WAR is the only live control this pass;
+## the two deferred rows are built but hidden behind their feature flags — the clean
+## hooks for the economy + war-special features (see the flag comments).
+func _build_war_prompt_panel() -> Panel:
+	var panel := Panel.new()
+	_center_fixed(panel)
+	panel.custom_minimum_size = Vector2(360, 360)
+	panel.add_theme_stylebox_override("panel", WarPalette.box(WarPalette.PANEL_HI, WarPalette.ACCENT, 4))
+	var col := _panel_column(panel, 22, 16)
+	var cry := Label.new()
+	cry.text = "IT'S WAR!"
+	cry.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	cry.add_theme_color_override("font_color", WarPalette.ACCENT_DEEP)
+	cry.add_theme_font_size_override("font_size", 48)
+	col.add_child(cry)
+	# Deferred BET wager row (economy/meta layer — kept OUT of the hashed state).
+	_war_bet_button = WarPalette.button("BET — %d ★" % WAR_BET_STARS, false, 22)
+	_war_bet_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_war_bet_button.disabled = true
+	_war_bet_button.visible = WAR_BET_ENABLED
+	col.add_child(_war_bet_button)
+	# Deferred war-time USE SPECIAL row (hash-domain engine change — open question).
+	_war_special_button = WarPalette.button("✦ USE SPECIAL", false, 22)
+	_war_special_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_war_special_button.disabled = true
+	_war_special_button.visible = WAR_SPECIAL_ENABLED
+	col.add_child(_war_special_button)
+	# The live commit (the IT'S WAR modal owns DECLARE WAR; the bottom action row dims).
+	_war_declare_button = WarPalette.button("DECLARE WAR", true, 30)
+	_war_declare_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_war_declare_button.custom_minimum_size = Vector2(0, 96)
+	_war_declare_button.pressed.connect(_on_declare_war_pressed)
+	col.add_child(_war_declare_button)
+	return panel
+
+
+## The "I DECLARE WAR!" reveal: each side's staked cards (WAR_STAKE face-down + 1 face-
+## up decider) flank the banner, then CONTINUE. Cards are (re)built per WAR_REVEALING
+## beat in `_populate_war_reveal` from the `war_decide` event (it carries the decider
+## RANKS); the backs are cosmetic. CONTINUE advances via request_skip — the reveal is a
+## transient that also auto-advances — so this adds NO new Director beat.
+func _build_war_reveal_panel() -> Panel:
+	var panel := Panel.new()
+	_center_fixed(panel)
+	panel.custom_minimum_size = Vector2(360, 460)
+	panel.add_theme_stylebox_override("panel", WarPalette.box(WarPalette.PANEL_HI, WarPalette.ACCENT, 4))
+	var col := _panel_column(panel, 20, 14)
+	_war_reveal_cpu_row = _stake_row()
+	col.add_child(_war_reveal_cpu_row)
+	var cry := Label.new()
+	cry.text = "I DECLARE WAR!"
+	cry.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	cry.add_theme_color_override("font_color", WarPalette.ACCENT_DEEP)
+	cry.add_theme_font_size_override("font_size", 34)
+	col.add_child(cry)
+	_war_reveal_you_row = _stake_row()
+	col.add_child(_war_reveal_you_row)
+	_war_continue_button = WarPalette.button("CONTINUE", true, 28)
+	_war_continue_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_war_continue_button.custom_minimum_size = Vector2(0, 80)
+	_war_continue_button.pressed.connect(_on_war_continue_pressed)
+	col.add_child(_war_continue_button)
+	return panel
+
+
+## A centered VBox inside a centered modal panel (shared by both war panels): a full-
+## rect margin pad of `margin` px wrapping a center-aligned column with `sep` spacing.
+func _panel_column(panel: Panel, margin: int, sep: int) -> VBoxContainer:
+	var pad := MarginContainer.new()
+	pad.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	for side in ["left", "right", "top", "bottom"]:
+		pad.add_theme_constant_override("margin_%s" % side, margin)
+	panel.add_child(pad)
+	var col := VBoxContainer.new()
+	col.alignment = BoxContainer.ALIGNMENT_CENTER
+	col.add_theme_constant_override("separation", sep)
+	pad.add_child(col)
+	return col
+
+
+## Pin a fixed-min-size panel to the surface CENTRE, growing symmetrically. Robust vs
+## set_anchors_and_offsets_preset(PRESET_CENTER), which bakes its offsets from the
+## control's pre-layout (zero) size, so the panel drifts off-centre once content lays out.
+static func _center_fixed(c: Control) -> void:
+	c.anchor_left = 0.5
+	c.anchor_top = 0.5
+	c.anchor_right = 0.5
+	c.anchor_bottom = 0.5
+	c.offset_left = 0.0
+	c.offset_top = 0.0
+	c.offset_right = 0.0
+	c.offset_bottom = 0.0
+	c.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	c.grow_vertical = Control.GROW_DIRECTION_BOTH
+
+
+## An empty centered HBox sized to hold one decider's height — populated per reveal.
+func _stake_row() -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 8)
+	row.custom_minimum_size = Vector2(0, WAR_DECIDER_SIZE.y)
+	return row
 
 
 func _build_result_overlay() -> Control:
@@ -354,7 +494,7 @@ func _build_result_overlay() -> Control:
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	overlay.add_child(dim)
 	var panel := Panel.new()
-	panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	_center_fixed(panel)
 	panel.custom_minimum_size = Vector2(320, 260)
 	panel.add_theme_stylebox_override("panel", WarPalette.box(WarPalette.PANEL_HI, WarPalette.INK, 3))
 	var vbox := VBoxContainer.new()
@@ -507,8 +647,9 @@ func _on_beat(beat_id: int, events: Array, locked: bool) -> void:
 	var B := RoundDirector.Beat
 
 	# Primary action button: "FLIP CARD" at the DEAL_PROMPT draw moment (and on the
-	# special-window FLIP_MOMENT, which arrives unlocked); "DECLARE WAR" at the war
-	# prompt; disabled on every auto/locked beat.
+	# special-window FLIP_MOMENT, which arrives unlocked); disabled on every auto/locked
+	# beat. DECLARE WAR now lives in the IT'S WAR modal (the bottom row dims under the war
+	# scrim, matching the mock), so the war prompt falls to the disabled default here.
 	match beat_id:
 		B.DEAL_PROMPT:
 			_action_button.text = "FLIP CARD"
@@ -516,9 +657,6 @@ func _on_beat(beat_id: int, events: Array, locked: bool) -> void:
 		B.FLIP_MOMENT:
 			_action_button.text = "FLIP CARD"
 			_action_button.disabled = locked   # enabled only on the special-window path
-		B.WAR_PROMPT:
-			_action_button.text = "DECLARE WAR"
-			_action_button.disabled = locked   # a runaway (deep) war auto-acks: button off
 		_:
 			_action_button.text = "—"
 			_action_button.disabled = true
@@ -529,7 +667,19 @@ func _on_beat(beat_id: int, events: Array, locked: bool) -> void:
 	var has_pending := _state.get("pending_special", null) != null
 	_special_button.disabled = beat_id != B.FLIP_MOMENT or has_pending or owned.is_empty()
 
-	_war_overlay.visible = (beat_id == B.WAR_BANNER or beat_id == B.WAR_REVEALING)
+	# WAR screens: the "IT'S WAR!" prompt spans WAR_BANNER (lead-in, DECLARE disabled) and
+	# WAR_PROMPT (the commit, DECLARE live on a shallow war); the "I DECLARE WAR!" reveal
+	# is the WAR_REVEALING stake reveal, (re)built from this beat's war_decide event.
+	var show_prompt := (beat_id == B.WAR_BANNER or beat_id == B.WAR_PROMPT)
+	var show_reveal := (beat_id == B.WAR_REVEALING)
+	_war_overlay.visible = show_prompt or show_reveal
+	_war_prompt_panel.visible = show_prompt
+	_war_reveal_panel.visible = show_reveal
+	# DECLARE WAR is live only at an unlocked WAR_PROMPT (a shallow war awaiting the
+	# player); the WAR_BANNER lead-in and a deep auto-acking war keep it disabled.
+	_war_declare_button.disabled = not (beat_id == B.WAR_PROMPT and not locked)
+	if show_reveal:
+		_populate_war_reveal(events)
 	_result_overlay.visible = (beat_id == B.GAME_OVER)
 	_skip_catcher.visible = locked
 
@@ -582,6 +732,84 @@ func _award_winner(events: Array) -> String:
 	return ""
 
 
+# ── I-DECLARE-WAR reveal (the WAR_REVEALING stake-reveal panel) ────────────────--
+
+## Build the staked cards into the reveal rows from the WAR_REVEALING beat's
+## `war_decide` event — engine.gd emits {type:"war_decide", depth, player, cpu} where
+## player/cpu are the deciding RANKS (the suited cards are gone once the pot is
+## awarded, so the reveal is rank-only). Each side: WAR_STAKE face-down backs + the 1
+## face-up decider, the winner's decider outlined green / loser red. Then a pop-in.
+func _populate_war_reveal(events: Array) -> void:
+	var decide := _find_event(events, "war_decide")
+	# Clear whatever the previous war left in the rows.
+	for row in [_war_reveal_cpu_row, _war_reveal_you_row]:
+		for child in row.get_children():
+			child.queue_free()
+	if decide.is_empty():
+		return
+	var p_rank := int(decide.get("player", 0))
+	var c_rank := int(decide.get("cpu", 0))
+	_fill_stake_row(_war_reveal_cpu_row, c_rank, _decider_border(c_rank, p_rank))
+	_fill_stake_row(_war_reveal_you_row, p_rank, _decider_border(p_rank, c_rank))
+	_animate_war_reveal()
+
+
+## Border colour for a decider: green if it beats the opponent, red if it loses, neutral
+## on a re-tie (which simply escalates the war again — no winner yet).
+func _decider_border(mine: int, theirs: int) -> Color:
+	if mine > theirs:
+		return WarPalette.WIN
+	if mine < theirs:
+		return WarPalette.LOSE
+	return WarPalette.INK
+
+
+## Lay WAR_STAKE face-down backs, then the face-up decider (rank-only, `border` outline).
+func _fill_stake_row(row: HBoxContainer, decider_rank: int, border: Color) -> void:
+	for _i in range(WarConstants.WAR_STAKE):
+		var back := CardVisual.make_slot(WAR_STAKE_BACK_SIZE, 22)
+		CardVisual.paint_back(back, back.get_child(0) as Label)
+		row.add_child(back)
+	var dec := CardVisual.make_slot(WAR_DECIDER_SIZE, 40)
+	CardVisual.paint_rank(dec, dec.get_child(0) as Label, decider_rank)
+	dec.add_theme_stylebox_override("panel", WarPalette.box(WarPalette.CARD_FACE, border, 4))
+	row.add_child(dec)
+
+
+## "Three cards pop out" — a short staggered scale/fade-in across both rows. Self-
+## contained presentation (its own tween, killed + restarted each reveal); fits inside
+## the WAR_REVEALING transient's window so it isn't clipped by the auto-advance.
+func _animate_war_reveal() -> void:
+	if _war_reveal_tween != null and _war_reveal_tween.is_valid():
+		_war_reveal_tween.kill()
+	var cards: Array = []
+	cards.append_array(_war_reveal_cpu_row.get_children())
+	cards.append_array(_war_reveal_you_row.get_children())
+	if cards.is_empty():
+		return
+	_war_reveal_tween = create_tween()
+	_war_reveal_tween.set_parallel(true)
+	var i := 0
+	for c in cards:
+		var ctrl := c as Control
+		ctrl.pivot_offset = ctrl.custom_minimum_size * 0.5
+		ctrl.scale = Vector2(0.4, 0.4)
+		ctrl.modulate.a = 0.0
+		var delay := i * 0.04
+		_war_reveal_tween.tween_property(ctrl, "scale", Vector2.ONE, 0.16) \
+			.set_delay(delay).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		_war_reveal_tween.tween_property(ctrl, "modulate:a", 1.0, 0.12).set_delay(delay)
+		i += 1
+
+
+## The first buffered event of `type` (or an empty Dictionary if none).
+func _find_event(events: Array, type: String) -> Dictionary:
+	for ev in events:
+		if String((ev as Dictionary).get("type", "")) == type:
+			return ev
+	return {}
+
+
 ## Recycle flourish: when a side's win deck flips to become its new drawing deck, sweep
 ## a couple of cards from the win slot onto the draw slot. Cosmetic; the static counts
 ## are already correct (counts() applies the recycle), so a skipped flight is harmless.
@@ -618,15 +846,49 @@ func _on_action_pressed() -> void:
 			_director.request_deal_and_flip()
 		RoundDirector.Beat.FLIP_MOMENT:
 			_director.request_flip()
-		RoundDirector.Beat.WAR_PROMPT:
-			_director.request_declare_war()
 
 
+## DECLARE WAR from the IT'S WAR modal — commits the war ack (engine stakes 3-down +
+## 1-up and compares). Gated by the button's own enabled state (live only at a shallow
+## WAR_PROMPT), and the Director drops a mistimed intent, so this is safe to call.
+func _on_declare_war_pressed() -> void:
+	_director.request_declare_war()
+
+
+## CONTINUE from the I-DECLARE-WAR reveal — advance the WAR_REVEALING transient now
+## (request_skip fires the armed chain-advance; a no-op once it has already advanced).
+func _on_war_continue_pressed() -> void:
+	_director.request_skip()
+
+
+## USE SPECIAL → open the carousel over the specials playable RIGHT NOW. This pass that
+## is the pre-flip window (FLIP_MOMENT), so offer only pre_flip-legal owned cards; the
+## engine still authoritatively validates the eventual play. The carousel emits
+## `special_selected`, wired to request_special.
 func _on_special_pressed() -> void:
-	var owned: Array = _state.get("specials", {}).get("player", [])
-	if owned.is_empty():
+	var ids := _playable_specials()
+	if ids.is_empty():
 		return
-	_director.request_special(String(owned.front()))
+	_special_modal.show_owned(ids)
+
+
+## Owned specials that are legal to play at the CURRENT beat. The basic loop's only
+## special window is the pre-flip flip moment, so filter to catalog `when == pre_flip`;
+## the war-time (post_flip) window is deferred. Reads the catalog metadata only.
+func _playable_specials() -> Array:
+	var owned: Array = _state.get("specials", {}).get("player", [])
+	var out: Array = []
+	for id in owned:
+		var meta: Dictionary = WarConstants.SPECIAL_CARDS.get(String(id), {})
+		if String(meta.get("when", "")) == WarConstants.WHEN_PRE_FLIP:
+			out.append(String(id))
+	return out
+
+
+## The carousel chose a special — dispatch it through the Director (the engine owns
+## ownership + timing; an illegal play is simply rejected, state unchanged).
+func _on_special_selected(id: String) -> void:
+	_director.request_special(id)
 
 
 func _on_skip_pressed() -> void:

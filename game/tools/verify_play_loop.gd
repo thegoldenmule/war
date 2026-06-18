@@ -737,7 +737,10 @@ func _hash_at_second_deal_prompt(use_skip: bool) -> String:
 			B.BOOT:
 				pass
 			_:
-				if use_skip:
+				# A player-GATED transient (the WAR reveal) arms NO timer, so it must be
+				# advanced by a tap in BOTH modes; only the TIMED transients differ (skip vs
+				# let-the-timer-fire) — that difference is exactly what skip-neutrality checks.
+				if use_skip or Director._is_gated_beat(d._beat):
 					d.request_skip()
 				# else: let the armed timer auto-fire (DRAWING / FLIP_MOMENT / REVEALING / ...)
 		guard += 1

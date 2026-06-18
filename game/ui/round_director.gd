@@ -68,7 +68,7 @@ enum Beat {
 	ROUND_RESULT,   # transient        — hold winner highlight, then next round
 	WAR_BANNER,     # transient        — "I. DECLARE. WAR." on entering a tie
 	WAR_PROMPT,     # phase "war"      — await: request_declare_war
-	WAR_REVEALING,  # transient        — stake 3-down + 1-up, reveal the deciders
+	WAR_REVEALING,  # transient (GATED) — stake 3-down + 1-up reveal; AWAITS the player's CONTINUE
 	GAME_OVER,      # phase player_win / cpu_win
 }
 
@@ -204,9 +204,11 @@ func request_quit() -> void:
 		router.goto("home")
 
 
-## Tap-to-skip: fire the armed transient/auto-action NOW. A no-op at the decision
-## beats (so the player's only choice is never auto-skipped) — changes WHEN, never
-## WHICH, so it is determinism-neutral.
+## Tap-to-skip / CONTINUE: fire the armed transient hold NOW — fast-forwarding a TIMED
+## transient, or ADVANCING a player-GATED one (the WAR reveal, which arms no timer and
+## only moves on this). A no-op at the decision beats (so the player's own choice is never
+## auto-skipped) — changes WHEN a presentation step ends, never WHICH, so it stays
+## determinism-neutral (the reveal submits no action; the engine already resolved the war).
 func request_skip() -> void:
 	if _pending_cb.is_valid() and not _is_decision_beat(_beat):
 		var cb := _pending_cb
@@ -275,7 +277,11 @@ func _play_chain(chain: Array, events: Array, resting: int, depth: int) -> void:
 		return
 	var head: int = chain.pop_front()
 	_emit(head, events, true)        # show the transient, input locked
-	_arm(_transient_dur(head, depth), func() -> void: _play_chain(chain, events, resting, depth))
+	var advance := func() -> void: _play_chain(chain, events, resting, depth)
+	if _is_gated_beat(head):
+		_hold(advance)               # AWAIT the player's CONTINUE — no auto-advance
+	else:
+		_arm(_transient_dur(head, depth), advance)
 
 
 ## Enter the resting beat for a phase: emit it (locked unless it awaits the player)
@@ -329,6 +335,20 @@ func _arm(seconds, cb := Callable()) -> void:
 	_pending = get_tree().create_timer(seconds)
 	_pending_cb = cb
 	_pending.timeout.connect(cb)
+
+
+## Hold a player-GATED transient: emit it locked, then AWAIT the player's advance
+## (request_skip — the CONTINUE button or a tap-anywhere on the locked beat) with NO
+## auto-timer, so the beat never self-advances. The WAR reveal is held this way so the
+## staked 3-down + 1-up cards stay on screen until the player chooses to continue. The
+## advance rides `_pending_cb` (the slot request_skip fires) but arms no SceneTreeTimer;
+## a reconcile snap still supersedes it cleanly (`_on_state` calls `_arm(null)` first).
+func _hold(cb: Callable) -> void:
+	if _pending != null and _pending.time_left > 0.0 and _pending_cb.is_valid() \
+			and _pending.timeout.is_connected(_pending_cb):
+		_pending.timeout.disconnect(_pending_cb)
+	_pending = null
+	_pending_cb = cb
 
 
 # ---------------------------------------------------------------------------
@@ -393,6 +413,16 @@ static func war_scale(depth: int) -> float:
 ## requires a valid armed callback, is a no-op there too — the choice is never skipped).
 static func _is_decision_beat(b: int) -> bool:
 	return b == Beat.DEAL_PROMPT or b == Beat.WAR_PROMPT or b == Beat.GAME_OVER
+
+
+## Player-GATED transients: they AWAIT a tap (request_skip — the CONTINUE button or a
+## tap-anywhere on the locked beat) instead of auto-advancing on a timer. The WAR reveal
+## is gated so the staked 3-down + 1-up cards stay on screen until the player continues —
+## presentation-only (the engine already resolved the war), so it changes WHEN the next
+## beat shows, never WHICH. (Distinct from a decision beat, which submits an ACTION and is
+## a no-op for request_skip; a gated transient submits nothing and request_skip advances it.)
+static func _is_gated_beat(b: int) -> bool:
+	return b == Beat.WAR_REVEALING
 
 
 ## Does any buffered event carry this `type`?

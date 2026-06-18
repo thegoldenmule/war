@@ -68,6 +68,16 @@ static func paint_face(slot: Panel, label: Label, card: Dictionary) -> void:
 	slot.add_theme_stylebox_override("panel", WarPalette.box(WarPalette.CARD_FACE, WarPalette.INK))
 
 
+## Face-up by RANK ONLY: a big rank glyph on an off-white face, no suit. The war
+## reveal's deciding cards come from the `war_decide` event, which carries ranks but
+## not suits (the hashed state's decider cards are gone once the pot is awarded), so
+## the I-DECLARE-WAR reveal paints the deciders this way rather than a full suited face.
+static func paint_rank(slot: Panel, label: Label, rank: int) -> void:
+	label.text = String(WarPalette.RANK_LABEL.get(rank, str(rank)))
+	label.add_theme_color_override("font_color", WarPalette.INK)
+	slot.add_theme_stylebox_override("panel", WarPalette.box(WarPalette.CARD_FACE, WarPalette.INK))
+
+
 ## A standalone face-down card visual sized to `size`, for the fly layer to tween.
 static func make_flying_back(size: Vector2) -> Panel:
 	var p := make_slot()
