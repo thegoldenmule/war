@@ -28,6 +28,13 @@ input → action → logic/ (pure) → new state + hash → scenes/ + ui/ render
 - **`logic/`** is pure GDScript — `class_name War*` static utilities on `RefCounted`, zero
   `Node`/scene/`EditorInterface` deps, headless-loadable. It is the only place game rules live.
 - **Presentation** (`scenes/`, `ui/`) reads state and renders; it never re-implements rules.
+  The **Round Director** (`ui/round_director.gd`, `WarRoundDirector`) is the presentation-tier
+  *play sequencer* between the view and `WarMatch`: it paces the engine's legal transitions into
+  timed *beats*, auto-advancing the mechanical actions (`start_round`, `resolve`) and pausing for
+  the player only at the flip moment and the WAR ack (deep runaway wars auto-advance). It owns no
+  hashed state — only a cosmetic beat, one armed timer, and the last apply's buffered events — and
+  only chooses WHICH legal action to submit and WHEN, so the validator re-runs an identical action
+  stream and every determinism/reconcile guarantee carries over unchanged.
 - **`net/`** carries actions/state to the validator as canonical-JSON strings and reconciles.
 
 ## State & action contract (the hash domain)
@@ -76,8 +83,8 @@ These three MUST be byte-identical on both sides — they are the parity contrac
 |---|---|---|
 | 0 | **Determinism primitives** — canonical JSON, 8-lane hash, seeded RNG; golden parity vs the TS dist | 🟡 skeleton — interfaces + algorithm in place, fill behind `# TODO(skeleton):` |
 | 1 | **Full deterministic engine** — deal, flip, resolve, WAR, Special Cards, win detection | 🟡 skeleton — `WarEngine.apply` contract stubbed, rules deferred |
-| 2 | **Playable single-player** — boot/menu shell, table scene, flip/war/special UI, vs-CPU loop | ⬜ planned |
-| 3 | **Validator integration** — Hermes WS envelope, optimistic apply + hash reconcile | ⬜ planned |
+| 2 | **Playable single-player** — boot/menu shell, table scene, flip/war/special UI, vs-CPU loop | 🟡 Core Play Loop **Phase A** built (offline): Round Director beats + tempo, auto-staging/resolve, WAR escalation, tap-to-skip, deep-war auto-ack, view-only table, PLAY AGAIN. Headless-verified (`verify_round_director`, `verify_play_loop`). |
+| 3 | **Validator integration** — Hermes WS envelope, optimistic apply + hash reconcile | ⬜ Core Play Loop **Phase B** planned: generate godobuf bindings, thread `match_id`/`player_id`, server-assigned seed at InitMatch, reconcile-reply alignment, CompleteMatch on terminal. |
 | 4 | **Meta / monetization** — Special Card collection, economy, the flip-moment storefront hook | ⬜ planned |
 
 Legend: ✅ done · 🟡 in progress / skeleton · ⬜ planned.
@@ -94,6 +101,8 @@ Legend: ✅ done · 🟡 in progress / skeleton · ⬜ planned.
 | Legality / validation | `logic/validation.gd` ⇄ TS | Per-action / per-phase checks |
 | Action schema | `logic/actions.gd` ⇄ TS | Unified player/CPU input |
 | Match runtime | `game/match_controller.gd` (`WarMatch`) | Owns state, drives the engine, sends validations |
+| Play sequencing (beats/tempo/pacing) | `ui/round_director.gd` (`WarRoundDirector`) | Presentation-tier; paces legal actions into beats; no hashed state |
+| Table view | `ui/screens/table.gd` | Render-only; owns a Director, forwards intents; buttons driven solely by `beat(locked)` |
 | Debug / LLM control | `game/mcp_game_api.gd` (`WarDebug` autoload) | Deterministic-state inspection surface |
 | Wire protocol | `../validator/protos/` | gRPC + Hermes envelope; godobuf bindings in `net/proto/` |
 | Golden vectors | `../validator/src/logic/dist` → `tests/golden/` | Vectors generated from the real TS dist |
