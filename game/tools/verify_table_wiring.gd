@@ -85,9 +85,12 @@ func _run() -> String:
 	if total != 52:
 		_retire(t)
 		return "table is not showing a full 52-card deal (got %d)" % total
-	if not String(t._player_draw_cap.text).begins_with("DRAW"):
+	# The draw count renders as a badge mini-card showing the deck count (no caption now);
+	# at the DEAL_PROMPT nothing is staged so the player draw badge == the full deck.
+	var deal_pdeck := (st.get("player_deck", []) as Array).size()
+	if String(t._player_draw_lbl.text) != str(deal_pdeck):
 		_retire(t)
-		return "player draw-pile caption did not render ('%s')" % t._player_draw_cap.text
+		return "player draw badge shows '%s', expected '%d'" % [t._player_draw_lbl.text, deal_pdeck]
 	# At the DEAL_PROMPT the current-card slots are EMPTY — nothing is drawn until the tap.
 	if not (st.get("player_pot", []) as Array).is_empty() or not (st.get("cpu_pot", []) as Array).is_empty():
 		_retire(t)
@@ -131,7 +134,7 @@ func _run() -> String:
 
 	# Win->draw recycle through the real _on_view_state: a SATURATED win pile (won >= the
 	# current deck — the draw pile emptied) flips to the draw pile on the next render
-	# (won -> 0, caption DRAW <full> / WIN 0) and queues a reshuffle sweep.
+	# (won -> 0, draw badge shows the full deck / win badge empty) and queues a reshuffle sweep.
 	var rec_state := t._director._match.get_state() as Dictionary
 	var rec_pdeck := (rec_state.get("player_deck", []) as Array).size()
 	if rec_pdeck < 1:
@@ -142,12 +145,13 @@ func _run() -> String:
 	if int(t._won["player"]) != 0:
 		_retire(t)
 		return "a saturated win pile did not recycle (won.player=%d, expected 0)" % t._won["player"]
-	if String(t._player_win_cap.text) != "WIN 0":
+	# After the recycle the win badge is empty ('—') and the draw badge shows the full deck.
+	if String(t._player_win_lbl.text) != "—":
 		_retire(t)
-		return "after a recycle the win caption is '%s', expected 'WIN 0' (win pile flipped to draw)" % t._player_win_cap.text
-	if String(t._player_draw_cap.text) != "DRAW %d" % rec_pdeck:
+		return "after a recycle the win badge is '%s', expected '—' (win pile flipped to draw)" % t._player_win_lbl.text
+	if String(t._player_draw_lbl.text) != str(rec_pdeck):
 		_retire(t)
-		return "after a recycle the draw caption is '%s', expected 'DRAW %d'" % [t._player_draw_cap.text, rec_pdeck]
+		return "after a recycle the draw badge is '%s', expected '%d'" % [t._player_draw_lbl.text, rec_pdeck]
 	if t._fly.get_child_count() == 0:
 		_retire(t)
 		return "the recycle did not queue a win->draw reshuffle sweep"

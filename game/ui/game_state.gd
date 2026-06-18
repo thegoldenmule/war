@@ -11,14 +11,21 @@ extends Node
 
 ## Gem wallet changed; payload is the new total.
 signal gems_changed(amount: int)
+## Star wallet changed; payload is the new total.
+signal stars_changed(amount: int)
 ## Profile counters changed (matches played, xp, ...).
 signal profile_changed()
 
 ## Starter wallet for the skeleton so the HUD shows something.
 const STARTER_GEMS := 100
+## Starter for the second (star) currency — a placeholder so the top bar reads like
+## the mockup (e.g. "1.5 K"). # TODO(skeleton): back stars with Snapser inventory.
+const STARTER_STARS := 1500
 
 ## Soft currency. Server-authoritative in production; never minted client-side then.
 var gems: int = 0
+## Second soft currency (placeholder). Same server-authoritative contract as gems.
+var stars: int = 0
 ## Lifetime matches entered (drives daily challenges / profile later).
 var matches_played: int = 0
 ## Local settings mirror (audio toggles, etc.). # TODO(skeleton): persist + sync.
@@ -28,6 +35,8 @@ var settings: Dictionary = {"sfx": true, "music": true}
 func _ready() -> void:
 	gems = STARTER_GEMS
 	gems_changed.emit(gems)
+	stars = STARTER_STARS
+	stars_changed.emit(stars)
 
 
 ## Credit gems (e.g. a match reward or daily bonus). Authoritative grants flow

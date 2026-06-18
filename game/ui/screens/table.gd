@@ -28,9 +28,22 @@ const RoundDirector := preload("res://ui/round_director.gd")
 const PileModel := preload("res://ui/pile_model.gd")
 const CardVisual := preload("res://ui/card_visual.gd")
 const FlyLayer := preload("res://ui/fly_layer.gd")
+const TopBar := preload("res://ui/shell/top_bar.gd")
+const AdBanner := preload("res://ui/shell/ad_banner.gd")
+const MenuPanel := preload("res://ui/shell/menu_panel.gd")
+const SafeArea := preload("res://ui/shell/safe_area.gd")
 const HermesClient := preload("res://net/hermes_client.gd")
 const SnapserAuth := preload("res://net/snapser_auth.gd")
 const ValidatorClient := preload("res://net/validator_client.gd")
+
+# ── Board card footprints (the central flip cards dominate; counts are mini badges) ──
+const BIG_CARD_MIN := Vector2(200, 280)   # floor; the card grows to fill via AspectRatio
+const BIG_CARD_FONT := 96
+const BADGE_SIZE := Vector2(88, 118)
+const BADGE_FONT := 40
+const CARD_ASPECT := 0.72                  # ~5:7 playing-card ratio
+const ACTION_BTN_HEIGHT := 132             # chunky primary CTAs (the mockup's tall buttons)
+const ACTION_BTN_BOTTOM_GAP := 48          # gap below the buttons so they aren't flush to the edge
 
 ## Local validator Hermes endpoint reached by pressing V (dev affordance). The
 ## deployed build would point this at the Snapser gateway.
@@ -50,25 +63,31 @@ var _won: Dictionary = {"player": 0, "cpu": 0}
 var _prev_phase: String = ""
 
 # ── Node refs (built in _ready) ───────────────────────────────────────────────
+# Slim status line (the phase caption / guidance), kept below the board.
 var _phase_label: Label = null
-# Per player: draw pile, current card, win pile (Panel) + their content Labels +
-# the draw/win count captions.
+# Persistent chrome (reusable shell components) + the safe-area spacer bands.
+var _top_bar: TopBar = null
+var _ad_banner: AdBanner = null
+var _menu: MenuPanel = null
+var _safe_top: Control = null
+var _safe_bottom: Control = null
+# Per player: one BIG central flip card + small count badges. The win pile is cosmetic
+# (won cards recycle into the draw deck), so CPU shows a SINGLE badge = its whole deck
+# and `_cpu_win` aliases `_cpu_draw`; YOU show separate draw + win badges (the literal
+# wireframe asymmetry). All six refs are kept so the fly layer's flights still resolve
+# to real on-screen rects.
 var _cpu_draw: Panel = null
 var _cpu_draw_lbl: Label = null
-var _cpu_draw_cap: Label = null
 var _cpu_card: Panel = null
 var _cpu_card_label: Label = null
-var _cpu_win: Panel = null
+var _cpu_win: Panel = null          # aliases _cpu_draw (consolidated deck badge)
 var _cpu_win_lbl: Label = null
-var _cpu_win_cap: Label = null
 var _player_draw: Panel = null
 var _player_draw_lbl: Label = null
-var _player_draw_cap: Label = null
 var _player_card: Panel = null
 var _player_card_label: Label = null
 var _player_win: Panel = null
 var _player_win_lbl: Label = null
-var _player_win_cap: Label = null
 var _special_button: Button = null
 var _action_button: Button = null
 var _fly: Control = null
@@ -86,6 +105,11 @@ func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_build_ui()
 	_start_director()
+	# Apply the device safe-area insets once layout has settled (a full-screen takeover
+	# owns the raw viewport, so it insets its own header/footer — layout gate rule 5).
+	# Re-run on rotation/resize since aspect=expand changes the surface per device.
+	get_viewport().size_changed.connect(_sync_chrome_offsets)
+	call_deferred("_sync_chrome_offsets")
 
 
 ## Dev affordance: press V to (re)connect this table to the local validator and
@@ -134,69 +158,97 @@ func _build_ui() -> void:
 	backdrop.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(backdrop)
 
-	var margin := MarginContainer.new()
-	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	for side in ["left", "right", "top", "bottom"]:
-		margin.add_theme_constant_override("margin_%s" % side, 24)
-	add_child(margin)
-
+	# Root column: chrome bands (full width) + a padded board that takes the slack +
+	# the action row, bracketed by the safe-area spacer bands. No outer margin — the
+	# bands are edge-to-edge; only the board/actions are side-padded.
 	var col := VBoxContainer.new()
-	col.add_theme_constant_override("separation", 16)
-	margin.add_child(col)
+	col.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	col.add_theme_constant_override("separation", 0)
+	add_child(col)
 
-	# ── Top bar: Back + phase ──────────────────────────────────────────────────
-	var topbar := HBoxContainer.new()
-	var back := WarPalette.button("‹ HOME", false, 16)
-	back.pressed.connect(_on_back_pressed)
-	topbar.add_child(back)
-	_phase_label = Label.new()
-	_phase_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_phase_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_phase_label.add_theme_color_override("font_color", WarPalette.INK)
-	_phase_label.add_theme_font_size_override("font_size", 18)
-	topbar.add_child(_phase_label)
-	col.add_child(topbar)
+	# Top safe-area inset (notch / status bar) — height set in _sync_chrome_offsets.
+	_safe_top = _spacer(0)
+	col.add_child(_safe_top)
 
-	# ── CPU row: draw | current | win ──────────────────────────────────────────
-	var cpu_row := _three_pile_row()
-	_cpu_draw = cpu_row["draw"]; _cpu_draw_lbl = cpu_row["draw_lbl"]; _cpu_draw_cap = cpu_row["draw_cap"]
+	# ── Persistent chrome: top bar + ad banner ─────────────────────────────────
+	_top_bar = TopBar.new()
+	_top_bar.shop_pressed.connect(_on_shop_pressed)
+	_top_bar.menu_pressed.connect(_on_menu_pressed)
+	col.add_child(_top_bar)
+
+	_ad_banner = AdBanner.new()
+	col.add_child(_ad_banner)
+
+	# ── Board: the central flip cards dominate the real estate ─────────────────
+	var board_pad := MarginContainer.new()
+	board_pad.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	board_pad.add_theme_constant_override("margin_left", 24)
+	board_pad.add_theme_constant_override("margin_right", 24)
+	board_pad.add_theme_constant_override("margin_top", 16)
+	board_pad.add_theme_constant_override("margin_bottom", 8)
+	col.add_child(board_pad)
+
+	var board := VBoxContainer.new()
+	board.add_theme_constant_override("separation", 16)
+	board_pad.add_child(board)
+
+	# CPU row: [deck badge] [BIG card] [spacer] — one badge (left), card centered.
+	var cpu_row := _board_row(false)
+	_cpu_draw = cpu_row["draw"]; _cpu_draw_lbl = cpu_row["draw_lbl"]
 	_cpu_card = cpu_row["card"]; _cpu_card_label = cpu_row["card_lbl"]
-	_cpu_win = cpu_row["win"]; _cpu_win_lbl = cpu_row["win_lbl"]; _cpu_win_cap = cpu_row["win_cap"]
-	col.add_child(_label("CPU", 20, WarPalette.INK))
-	col.add_child(cpu_row["row"])
+	# CPU's win pile aliases its single deck badge (consolidated; see the ref comments).
+	_cpu_win = _cpu_draw; _cpu_win_lbl = _cpu_draw_lbl
+	board.add_child(cpu_row["row"])
 
-	var vs := Label.new()
-	vs.text = "— vs —"
-	vs.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	vs.add_theme_color_override("font_color", WarPalette.INK_DIM)
-	col.add_child(vs)
-
-	# ── Player row: draw | current | win ───────────────────────────────────────
-	var you_row := _three_pile_row()
-	_player_draw = you_row["draw"]; _player_draw_lbl = you_row["draw_lbl"]; _player_draw_cap = you_row["draw_cap"]
+	# YOU row: [draw badge] [BIG card] [win badge] — both badges, card centered.
+	var you_row := _board_row(true)
+	_player_draw = you_row["draw"]; _player_draw_lbl = you_row["draw_lbl"]
 	_player_card = you_row["card"]; _player_card_label = you_row["card_lbl"]
-	_player_win = you_row["win"]; _player_win_lbl = you_row["win_lbl"]; _player_win_cap = you_row["win_cap"]
-	col.add_child(you_row["row"])
-	col.add_child(_label("YOU", 20, WarPalette.INK))
+	_player_win = you_row["win"]; _player_win_lbl = you_row["win_lbl"]
+	board.add_child(you_row["row"])
 
+	# ── Slim status line (phase caption / guidance) ────────────────────────────
+	_phase_label = Label.new()
+	_phase_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_phase_label.add_theme_color_override("font_color", WarPalette.INK)
+	_phase_label.add_theme_font_size_override("font_size", 20)
+	col.add_child(_phase_label)
 	col.add_child(_spacer(8))
 
 	# ── Action row: Use Special (the flip moment) + primary action ─────────────
+	var actions_pad := MarginContainer.new()
+	actions_pad.add_theme_constant_override("margin_left", 24)
+	actions_pad.add_theme_constant_override("margin_right", 24)
+	# Lift the buttons off the bottom edge (the mockup shows a clear gap below them). This
+	# sits on top of the bottom safe inset, so on a device they clear the gesture bar too.
+	actions_pad.add_theme_constant_override("margin_bottom", ACTION_BTN_BOTTOM_GAP)
+	col.add_child(actions_pad)
 	var actions := HBoxContainer.new()
 	actions.add_theme_constant_override("separation", 12)
-	_special_button = WarPalette.button("✦ USE SPECIAL", false, 18)
+	actions_pad.add_child(actions)
+	_special_button = WarPalette.button("✦ USE SPECIAL", false, 26)
 	_special_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_special_button.custom_minimum_size = Vector2(0, ACTION_BTN_HEIGHT)
 	_special_button.pressed.connect(_on_special_pressed)
 	actions.add_child(_special_button)
-	_action_button = WarPalette.button("FLIP CARD", true, 20)
+	_action_button = WarPalette.button("FLIP CARD", true, 30)
 	_action_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_action_button.custom_minimum_size = Vector2(0, ACTION_BTN_HEIGHT)
 	_action_button.pressed.connect(_on_action_pressed)
 	actions.add_child(_action_button)
-	col.add_child(actions)
+
+	# Bottom safe-area inset (home indicator / gesture bar).
+	_safe_bottom = _spacer(0)
+	col.add_child(_safe_bottom)
 
 	# ── Fly layer (above the table, below the overlays + skip-catcher) ─────────
 	_fly = FlyLayer.new()
 	add_child(_fly)
+
+	# ── Hamburger dropdown (above the board, below the war/result overlays) ────
+	_menu = MenuPanel.new()
+	_menu.exit_pressed.connect(_on_exit_pressed)
+	add_child(_menu)
 
 	# ── Overlays + tap-catcher (top-most) ──────────────────────────────────────
 	_war_overlay = _build_war_overlay()
@@ -213,49 +265,49 @@ func _build_ui() -> void:
 	add_child(_skip_catcher)
 
 
-## Build one player's row of three cells (draw | current | win). Returns the row
-## HBox plus refs to each slot Panel, its content Label, and the draw/win captions.
-func _three_pile_row() -> Dictionary:
+## Build one player's board row: a small count badge, then the BIG central flip card
+## (kept to a playing-card aspect by an AspectRatioContainer so it grows to fill the
+## row height without distorting), then — for the player (`has_win`) — a second badge.
+## The CPU row gets a fixed spacer in the win slot instead, so its single badge sits to
+## the left while the big card stays screen-centered (the literal wireframe). Returns
+## the row plus refs to the badge/card slots and their content Labels.
+func _board_row(has_win: bool) -> Dictionary:
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.add_theme_constant_override("separation", 18)
-	var draw := _pile_cell("DRAW")
-	var card := _pile_cell("")
-	var win := _pile_cell("WIN")
-	row.add_child(draw["cell"])
-	row.add_child(card["cell"])
-	row.add_child(win["cell"])
-	return {
+	row.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	row.add_theme_constant_override("separation", 16)
+
+	var draw := CardVisual.make_slot(BADGE_SIZE, BADGE_FONT)
+	draw.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(draw)
+
+	var arc := AspectRatioContainer.new()
+	arc.ratio = CARD_ASPECT
+	arc.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	arc.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	var card := CardVisual.make_slot(BIG_CARD_MIN, BIG_CARD_FONT)
+	arc.add_child(card)
+	row.add_child(arc)
+
+	var result := {
 		"row": row,
-		"draw": draw["slot"], "draw_lbl": draw["lbl"], "draw_cap": draw["cap"],
-		"card": card["slot"], "card_lbl": card["lbl"],
-		"win": win["slot"], "win_lbl": win["lbl"], "win_cap": win["cap"],
+		"draw": draw, "draw_lbl": draw.get_child(0) as Label,
+		"card": card, "card_lbl": card.get_child(0) as Label,
 	}
 
+	if has_win:
+		var win := CardVisual.make_slot(BADGE_SIZE, BADGE_FONT)
+		win.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		row.add_child(win)
+		result["win"] = win
+		result["win_lbl"] = win.get_child(0) as Label
+	else:
+		# Balance the lone left badge so the big card stays centered.
+		var pad := Control.new()
+		pad.custom_minimum_size = Vector2(BADGE_SIZE.x, 0)
+		row.add_child(pad)
 
-## One cell: a card slot above a caption label (empty caption for the current-card
-## cell keeps all three columns vertically aligned).
-func _pile_cell(caption: String) -> Dictionary:
-	var cell := VBoxContainer.new()
-	cell.alignment = BoxContainer.ALIGNMENT_CENTER
-	cell.add_theme_constant_override("separation", 6)
-	var slot := CardVisual.make_slot()
-	cell.add_child(slot)
-	var cap := Label.new()
-	cap.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	cap.add_theme_color_override("font_color", WarPalette.INK)
-	cap.add_theme_font_size_override("font_size", 15)
-	cap.text = caption
-	cell.add_child(cap)
-	return {"cell": cell, "slot": slot, "lbl": slot.get_child(0) as Label, "cap": cap}
-
-
-func _label(text: String, size: int, color: Color) -> Label:
-	var l := Label.new()
-	l.text = text
-	l.add_theme_color_override("font_color", color)
-	l.add_theme_font_size_override("font_size", size)
-	return l
+	return result
 
 
 func _spacer(h: int) -> Control:
@@ -367,9 +419,11 @@ func _render(state: Dictionary) -> void:
 	_won = PileModel.recycle(_won, pdeck, cdeck)
 	_paint_piles()
 
-	# Current cards: the staked pot card (face-down until flipped). Empty between rounds.
-	_render_current(_cpu_card, _cpu_card_label, state.get("cpu_pot", []))
-	_render_current(_player_card, _player_card_label, state.get("player_pot", []))
+	# Current cards: the staked pot card (face-down until flipped). Between rounds the pot
+	# is empty, so the big slot shows the deck back (the next card to flip) while any card
+	# remains — the dominant "BACK OF CARD" at rest — and only goes empty at a drained deck.
+	_render_current(_cpu_card, _cpu_card_label, state.get("cpu_pot", []), cdeck)
+	_render_current(_player_card, _player_card_label, state.get("player_pot", []), pdeck)
 	_apply_win_loss(state.get("cpu_pot", []), state.get("player_pot", []))
 
 	_phase_label.text = _phase_caption(phase, int(state.get("war_depth", 0)))
@@ -382,32 +436,27 @@ func _render(state: Dictionary) -> void:
 	_prev_phase = phase
 
 
-## Paint the four pile slots (draw + win for each player) from the cosmetic counts.
+## Paint the count badges from the cosmetic counts. CPU gets a SINGLE badge showing its
+## whole deck (draw + win — won cards recycle into the draw deck, so the split is moot
+## on that side); YOU get separate draw + win badges (the literal wireframe layout).
 func _paint_piles() -> void:
 	var pdeck: int = (_state.get("player_deck", []) as Array).size()
 	var cdeck: int = (_state.get("cpu_deck", []) as Array).size()
 	var piles := PileModel.counts(_won, pdeck, cdeck)
-	_paint_pile(_cpu_draw, _cpu_draw_lbl, _cpu_draw_cap, "DRAW", int(piles["cpu"]["draw"]))
-	_paint_pile(_cpu_win, _cpu_win_lbl, _cpu_win_cap, "WIN", int(piles["cpu"]["win"]))
-	_paint_pile(_player_draw, _player_draw_lbl, _player_draw_cap, "DRAW", int(piles["player"]["draw"]))
-	_paint_pile(_player_win, _player_win_lbl, _player_win_cap, "WIN", int(piles["player"]["win"]))
+	CardVisual.paint_count(_cpu_draw, _cpu_draw_lbl, cdeck)
+	CardVisual.paint_count(_player_draw, _player_draw_lbl, int(piles["player"]["draw"]))
+	CardVisual.paint_count(_player_win, _player_win_lbl, int(piles["player"]["win"]))
 
 
-## A pile slot: a face-down back when it holds cards, a dim placeholder when empty;
-## the caption shows the role + count.
-func _paint_pile(slot: Panel, label: Label, cap: Label, role: String, count: int) -> void:
-	if count > 0:
-		CardVisual.paint_back(slot, label)
-	else:
-		CardVisual.paint_empty(slot, label)
-	cap.text = "%s %d" % [role, count]
-
-
-## Paint a current-card slot from a pot: the staked top card (face-up if revealed),
-## or empty when no card is staged.
-func _render_current(slot: Panel, label: Label, pot: Variant) -> void:
+## Paint a current-card slot from a pot: the staked top card (face-up if revealed). With
+## no card staged, show the deck back while `deck_count` cards remain (the resting "BACK
+## OF CARD"), or an empty placeholder once the deck is drained.
+func _render_current(slot: Panel, label: Label, pot: Variant, deck_count: int) -> void:
 	if not (pot is Array) or (pot as Array).is_empty():
-		CardVisual.paint_empty(slot, label)
+		if deck_count > 0:
+			CardVisual.paint_back(slot, label)
+		else:
+			CardVisual.paint_empty(slot, label)
 		return
 	var card: Dictionary = (pot as Array).back()
 	if bool(card.get("face_up", false)):
@@ -541,6 +590,10 @@ func _queue_recycle_anim(who: String) -> void:
 		return
 	var win_slot: Panel = _player_win if who == "player" else _cpu_win
 	var draw_slot: Panel = _player_draw if who == "player" else _cpu_draw
+	# CPU consolidates win+draw into one badge, so a recycle sweep would fly in place —
+	# nothing to show.
+	if win_slot == draw_slot:
+		return
 	var from := win_slot.get_global_rect()
 	var to := draw_slot.get_global_rect()
 	# A short flurry of staggered card-backs reads as the win pile flipping over into the
@@ -588,5 +641,32 @@ func _on_continue_pressed() -> void:
 	_director.request_quit()
 
 
-func _on_back_pressed() -> void:
+# ── Chrome (top bar + hamburger menu) ──────────────────────────────────────────
+
+func _on_shop_pressed() -> void:
+	# TODO(skeleton): push("shop") once the store screen lands.
+	print("[Table] shop tapped (placeholder)")
+
+
+func _on_menu_pressed() -> void:
+	if _menu != null:
+		_menu.toggle()
+
+
+## EXIT GAME from the hamburger menu — leave the match back to the lobby (the old
+## back button's behavior).
+func _on_exit_pressed() -> void:
 	_director.request_quit()
+
+
+## Push the device safe-area insets into the spacer bands and drop the menu below the
+## top bar. Idempotent; re-run on resize/rotation (insets are 0 on desktop/editor).
+func _sync_chrome_offsets() -> void:
+	var insets := SafeArea.insets(self)
+	if _safe_top != null:
+		_safe_top.custom_minimum_size = Vector2(0, float(insets["top"]))
+	if _safe_bottom != null:
+		_safe_bottom.custom_minimum_size = Vector2(0, float(insets["bottom"]))
+	if _menu != null and _top_bar != null:
+		_menu.top_inset = float(insets["top"]) + _top_bar.size.y
+		_menu._reposition()

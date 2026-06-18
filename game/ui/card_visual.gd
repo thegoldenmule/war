@@ -12,15 +12,17 @@ const FONT_SIZE := 36
 
 
 ## A bordered card slot Panel with a centered Label child (child 0). Painted by the
-## paint_* helpers below.
-static func make_slot() -> Panel:
+## paint_* helpers below. `slot_size` and `font_size` default to the standard card
+## footprint; pass smaller values for a count "badge" mini-card, larger for the big
+## central flip card (the board makes the central cards dominate the real estate).
+static func make_slot(slot_size := SLOT_SIZE, font_size := FONT_SIZE) -> Panel:
 	var p := Panel.new()
-	p.custom_minimum_size = SLOT_SIZE
+	p.custom_minimum_size = slot_size
 	var l := Label.new()
 	l.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	l.add_theme_font_size_override("font_size", FONT_SIZE)
+	l.add_theme_font_size_override("font_size", font_size)
 	l.add_theme_color_override("font_color", WarPalette.INK)
 	p.add_child(l)
 	p.add_theme_stylebox_override("panel", WarPalette.box(WarPalette.PANEL, WarPalette.INK_DIM))
@@ -32,6 +34,18 @@ static func paint_empty(slot: Panel, label: Label) -> void:
 	label.text = "—"
 	label.add_theme_color_override("font_color", WarPalette.INK_DIM)
 	slot.add_theme_stylebox_override("panel", WarPalette.box(WarPalette.PANEL, WarPalette.INK_DIM))
+
+
+## Count "badge": a white-face mini-card showing a pile depth as a plain number (the
+## flanking draw/win counters in the board layout). A zero count reads as a dim empty
+## card so an exhausted pile is visually distinct from a held one.
+static func paint_count(slot: Panel, label: Label, count: int) -> void:
+	if count <= 0:
+		paint_empty(slot, label)
+		return
+	label.text = str(count)
+	label.add_theme_color_override("font_color", WarPalette.INK)
+	slot.add_theme_stylebox_override("panel", WarPalette.box(WarPalette.CARD_FACE, WarPalette.INK))
 
 
 ## Face-down back: the steel-blue card back. `glyph` defaults to the suit-spade-ish
