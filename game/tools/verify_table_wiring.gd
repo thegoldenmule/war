@@ -129,19 +129,19 @@ func _run() -> String:
 		_retire(t)
 		return "primary button is enabled on the locked DRAWING beat"
 
-	# Win->draw recycle through the real _on_beat: a SATURATING award flips the win pile
-	# to the draw pile (won -> 0, the caption reads DRAW <full> / WIN 0) and queues a
-	# recycle sweep. Seed the cosmetic accumulator one short of the deck, then award one.
-	t._fly.clear()
-	var rec_pdeck := (t._director._match.get_state().get("player_deck", []) as Array).size()
+	# Win->draw recycle through the real _on_view_state: a SATURATED win pile (won >= the
+	# current deck — the draw pile emptied) flips to the draw pile on the next render
+	# (won -> 0, caption DRAW <full> / WIN 0) and queues a reshuffle sweep.
+	var rec_state := t._director._match.get_state() as Dictionary
+	var rec_pdeck := (rec_state.get("player_deck", []) as Array).size()
 	if rec_pdeck < 1:
 		_retire(t)
 		return "no player draw deck to exercise the recycle"
-	t._won = {"player": maxi(0, rec_pdeck - 1), "cpu": 0}
-	t._on_beat(B.ROUND_RESULT, [{"type": "award", "winner": "player", "cards": 1}], false)
+	t._won = {"player": rec_pdeck, "cpu": 0}   # win pile saturates the deck -> recycle
+	t._on_view_state(rec_state)
 	if int(t._won["player"]) != 0:
 		_retire(t)
-		return "a saturating award did not recycle the win pile (won.player=%d, expected 0)" % t._won["player"]
+		return "a saturated win pile did not recycle (won.player=%d, expected 0)" % t._won["player"]
 	if String(t._player_win_cap.text) != "WIN 0":
 		_retire(t)
 		return "after a recycle the win caption is '%s', expected 'WIN 0' (win pile flipped to draw)" % t._player_win_cap.text
@@ -150,7 +150,7 @@ func _run() -> String:
 		return "after a recycle the draw caption is '%s', expected 'DRAW %d'" % [t._player_draw_cap.text, rec_pdeck]
 	if t._fly.get_child_count() == 0:
 		_retire(t)
-		return "the recycle did not queue a win->draw sweep flight"
+		return "the recycle did not queue a win->draw reshuffle sweep"
 
 	# Fly-layer: TWO simultaneous flights (the draw-in / win-sweep case) each get their
 	# OWN tween — reusing one tween fails with "Can't append to a Tween that has started".

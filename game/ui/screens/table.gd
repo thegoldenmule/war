@@ -290,7 +290,26 @@ func _on_view_state(state: Dictionary) -> void:
 	# state (normal advance or reconcile snap) must never leave a stranded card.
 	if _fly != null:
 		_fly.clear()
+	var phase := String(state.get("phase", ""))
+	var pdeck: int = (state.get("player_deck", []) as Array).size()
+	var cdeck: int = (state.get("cpu_deck", []) as Array).size()
+	# A new match resets the cosmetic accumulator BEFORE we look for a recycle, so a
+	# fresh deal never reads as a spurious win->draw flip. (The Director drops the
+	# new_game event from resting beats, so detect the restart by phase transition.)
+	if (_prev_phase == "" or _is_terminal(_prev_phase)) and not _is_terminal(phase):
+		_won = PileModel.empty()
+	# A win->draw RECYCLE is a won-pile SATURATION going into this render — almost always
+	# a draw (start_round/ack_war) that emptied the draw pile, which lands here, not on a
+	# result beat (an award grows the deck AND the win pile equally, so it never saturates).
+	# Detect it BEFORE _render's write-back resets the accumulator, render, then play the
+	# reshuffle sweep — once, since the reset makes a re-render of the same state
+	# non-saturated (idempotent / reconcile-safe).
+	var recycled := PileModel.recycled_sides(_won, pdeck, cdeck)
 	_render(state)
+	if bool(recycled["player"]):
+		_queue_recycle_anim("player")
+	if bool(recycled["cpu"]):
+		_queue_recycle_anim("cpu")
 
 
 ## Render the entire table from a state dictionary. Idempotent and total: reads
@@ -299,16 +318,11 @@ func _render(state: Dictionary) -> void:
 	_state = state
 	var phase := String(state.get("phase", "—"))
 
-	# Reset the cosmetic win piles when a NEW match starts: the first render, or a
-	# transition out of a terminal phase (PLAY AGAIN). The Director drops the
-	# new_game event from its resting-beat payload, so detect the restart by phase.
-	if (_prev_phase == "" or _is_terminal(_prev_phase)) and not _is_terminal(phase):
-		_won = PileModel.empty()
-
 	var pdeck: int = (state.get("player_deck", []) as Array).size()
 	var cdeck: int = (state.get("cpu_deck", []) as Array).size()
 	# Recycle write-back: pin the accumulator to what is actually held, flipping a
-	# saturated win pile back to the draw pile (recycle is pure + idempotent).
+	# saturated win pile back to the draw pile (recycle is pure + idempotent). The new-
+	# match reset and the recycle-animation edge-detection live in _on_view_state.
 	_won = PileModel.recycle(_won, pdeck, cdeck)
 	_paint_piles()
 
@@ -431,20 +445,15 @@ func _on_beat(beat_id: int, events: Array, locked: bool) -> void:
 
 	# Accrue the cosmetic win pile EXACTLY ONCE per apply: only on the result/terminal
 	# beat, never on WAR_REVEALING (a war win's award rides in both WAR_REVEALING and
-	# ROUND_RESULT — accruing on both would double-count). Detect a recycle (the win
-	# pile just SATURATED the deck) BEFORE the recycle write-back, and sweep it once: the
-	# write-back resets the accumulator to 0, so the next apply is no longer saturated.
+	# ROUND_RESULT — accruing on both would double-count). The recycle write-back + paint
+	# keep the counts honest; the recycle ANIMATION is detected in _on_view_state (an
+	# award grows deck and win equally, so it never saturates — recycles come from draws).
 	if beat_id == B.ROUND_RESULT or beat_id == B.GAME_OVER:
 		var pdeck: int = (_state.get("player_deck", []) as Array).size()
 		var cdeck: int = (_state.get("cpu_deck", []) as Array).size()
 		_won = PileModel.accrue(_won, events)
-		var sides := PileModel.recycled_sides(_won, pdeck, cdeck)
 		_won = PileModel.recycle(_won, pdeck, cdeck)
 		_paint_piles()
-		if bool(sides["player"]):
-			_queue_recycle_anim("player")
-		if bool(sides["cpu"]):
-			_queue_recycle_anim("cpu")
 
 	_play_beat_animation(beat_id, events)
 
@@ -491,9 +500,14 @@ func _queue_recycle_anim(who: String) -> void:
 		return
 	var win_slot: Panel = _player_win if who == "player" else _cpu_win
 	var draw_slot: Panel = _player_draw if who == "player" else _cpu_draw
-	var dur := _fly_dur("result")
-	_fly.fly_back(win_slot.get_global_rect(), draw_slot.get_global_rect(), dur)
-	_fly.fly_back(win_slot.get_global_rect(), draw_slot.get_global_rect(), dur, 0.05)
+	var from := win_slot.get_global_rect()
+	var to := draw_slot.get_global_rect()
+	# A short flurry of staggered card-backs reads as the win pile flipping over into the
+	# draw pile. Kept within the draw-in window (the 'stage' tempo) so it isn't clipped by
+	# the auto-flip that follows the same tap.
+	var dur := _fly_dur("stage")
+	for i in range(4):
+		_fly.fly_back(from, to, dur, i * 0.03)
 
 
 ## Flight duration: a fraction of the owning beat's tempo (kept coupled to the
