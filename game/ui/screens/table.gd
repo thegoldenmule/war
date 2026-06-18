@@ -28,6 +28,13 @@ const RoundDirector := preload("res://ui/round_director.gd")
 const PileModel := preload("res://ui/pile_model.gd")
 const CardVisual := preload("res://ui/card_visual.gd")
 const FlyLayer := preload("res://ui/fly_layer.gd")
+const HermesClient := preload("res://net/hermes_client.gd")
+const SnapserAuth := preload("res://net/snapser_auth.gd")
+const ValidatorClient := preload("res://net/validator_client.gd")
+
+## Local validator Hermes endpoint reached by pressing V (dev affordance). The
+## deployed build would point this at the Snapser gateway.
+const LOCAL_VALIDATOR_WS := "ws://localhost:5555/hermes/ws"
 
 ## Flight durations are this fraction of the owning beat's tempo, so a card lands
 ## before the Director's auto-action fires the next state change.
@@ -70,11 +77,45 @@ var _result_overlay: Control = null
 var _result_label: Label = null
 var _skip_catcher: Button = null
 
+# ── Online transport (built lazily on the first connect) ───────────────────────
+var _validator: Node = null
+var _online_requested: bool = false
+
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_build_ui()
 	_start_director()
+
+
+## Dev affordance: press V to (re)connect this table to the local validator and
+## play the rest online. Idempotent — a second press while connecting is ignored.
+## The board is never frozen: the Director holds input only through the handshake
+## and degrades to offline on any transport failure.
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_V:
+		_connect_online()
+
+
+func _connect_online() -> void:
+	if _online_requested:
+		return
+	_online_requested = true
+	# Build the transport stack once and add it to the tree (the socket pump and
+	# the client's frame-poll both need to process). Local mode self-stamps the
+	# player id as the ?token= query param.
+	var auth := SnapserAuth.new()
+	auth.mode = SnapserAuth.Mode.LOCAL
+	var hermes := HermesClient.new()
+	hermes.base_url = LOCAL_VALIDATOR_WS
+	_validator = ValidatorClient.new()
+	add_child(auth)
+	add_child(hermes)
+	add_child(_validator)
+	_validator.setup(hermes, auth)
+	# A terminal client failure re-arms the affordance so the player can retry.
+	_validator.client_error.connect(func(_reason): _online_requested = false)
+	_director.connect_online(_validator)
 
 
 func _start_director() -> void:

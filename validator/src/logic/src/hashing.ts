@@ -99,7 +99,13 @@ function encode(value: unknown, indent: string): string {
     // Sort keys lexicographically by UTF-16 code unit (matches GDScript's
     // ascending string sort and json-stable-stringify's default comparator).
     const keys = Object.keys(obj)
-      .filter((k) => obj[k] !== null) // OMIT null-valued object members
+      // OMIT null/undefined-valued members. The contract omits null keys; a key
+      // that is `undefined` (e.g. an optional like pending_special that was
+      // omitted from canonical JSON and so re-parses as undefined) is the same
+      // "absent" state and must serialize identically — matching GDScript, where
+      // a missing Dictionary key is simply never emitted. (Only `undefined` is
+      // newly handled here; it previously threw, so no existing hash changes.)
+      .filter((k) => obj[k] !== null && obj[k] !== undefined)
       .sort();
     if (keys.length === 0) {
       return "{}";

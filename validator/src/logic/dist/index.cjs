@@ -259,7 +259,7 @@ function encode(value, indent) {
   if (t === "object") {
     const obj = value;
     const childIndent = indent + "  ";
-    const keys = Object.keys(obj).filter((k) => obj[k] !== null).sort();
+    const keys = Object.keys(obj).filter((k) => obj[k] !== null && obj[k] !== void 0).sort();
     if (keys.length === 0) {
       return "{}";
     }

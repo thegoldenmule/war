@@ -29,12 +29,12 @@ option go_package = "thegoldenmule/war/validator/gen/hermes;hermes";
 message SnapApiProxyRequest {
   string request_id = 1;
   // Logical RPC target, e.g. "war.validator.v1.ValidatorService/ValidateAction"
-  // or the short method name "ValidateAction".
-  string method = 2;
+  // or the short method name "ValidateAction". Named `api_method` (not `method`)
+  // because godobuf would otherwise generate has_method(), colliding with the
+  // built-in Object.has_method(). Field names are not on the wire, so this is safe.
+  string api_method = 2;
   // Serialized request proto bytes for the selected method.
   bytes payload = 3;
-  // Optional pass-through metadata (e.g. trace ids). Not part of the hash domain.
-  map<string, string> metadata = 4;
 }
 
 // SnapApiProxyResponse — the server->client "snap-api-proxy" body.
@@ -47,7 +47,6 @@ message SnapApiProxyResponse {
   string status_message = 3;
   // Serialized response proto bytes for the originating method.
   bytes payload = 4;
-  map<string, string> metadata = 5;
 }
 
 // ClientMessage — every frame the client sends over the Hermes WebSocket.

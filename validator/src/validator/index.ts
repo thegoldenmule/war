@@ -20,6 +20,7 @@ import { config } from "./config.ts";
 import { startGrpcServer } from "./grpc.ts";
 import { handleMcpRequest } from "./mcp.ts";
 import { makeHermesWebSocketHandlers, tryHermesUpgrade } from "./hermes-ws.ts";
+import { getHermesCodec } from "./proto.ts";
 import { healthRouter } from "./routes/health.ts";
 import { matchRouter } from "./routes/match.ts";
 
@@ -49,7 +50,10 @@ export function buildApp(): Hono {
 /** Start the full service. Returns handles for graceful shutdown (tests/ops). */
 export async function start() {
   const app = buildApp();
-  const hermesHandlers = makeHermesWebSocketHandlers();
+  // Preload the Hermes protobuf codec once so the (sync) WS message handler can
+  // encode/decode binary frames without awaiting per message.
+  const codec = await getHermesCodec();
+  const hermesHandlers = makeHermesWebSocketHandlers(codec);
 
   // Bun's native server lets the Hermes WS upgrade and Hono coexist on one port.
   const server = Bun.serve({

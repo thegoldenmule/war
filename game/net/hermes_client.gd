@@ -53,6 +53,11 @@ signal transport_error(reason: String)
 ## plus our own pre-connect/closed bookkeeping.
 enum State { CLOSED, CONNECTING, OPEN, CLOSING }
 
+## godobuf-generated Hermes envelope bindings (binary protobuf wire). The inner
+## ValidatorService request/response bytes are built/parsed by WarValidatorClient;
+## this transport only frames them into ClientMessage / ServerMessage.
+const HermesPb := preload("res://net/proto/hermes_envelope_pb.gd")
+
 ## Local validator Hermes endpoint. `{token}` is filled with the player id.
 const LOCAL_HERMES_URL := "ws://localhost:5555/hermes/ws"
 ## Production endpoint is the Snapser gateway; injected per deployment.
@@ -114,21 +119,22 @@ func is_open() -> bool:
 	return _state == State.OPEN
 
 
-## Send an inner api request wrapped in a Hermes ClientMessage envelope.
+## Send a serialized ValidatorService request wrapped in a Hermes ClientMessage.
 ##
-## `api_method` names the validator RPC ("InitMatch"|"ValidateAction"|
-## "CompleteMatch"); `body` is a Dictionary whose values are already
-## canonical-JSON STRINGS where the contract requires it (state/action). A
-## fresh request id is generated, recorded in `_pending`, and returned so the
-## caller can correlate the eventual `envelope_received`.
+## `api_method` names the RPC ("InitMatch"|"ValidateAction"|"CompleteMatch");
+## `request_bytes` is the already-serialized request proto (built by
+## WarValidatorClient from the godobuf ValidatorPb messages — its string fields
+## carry canonical-JSON state/actions, the hash domain). A fresh request id is
+## generated, recorded in `_pending`, and returned so the caller can correlate
+## the eventual `envelope_received`.
 ##
 ## Returns "" if the socket is not open (caller should retry after `connected`).
-func send_envelope(api_method: String, body: Dictionary) -> String:
+func send_rpc(api_method: String, request_bytes: PackedByteArray) -> String:
 	if not is_open():
 		transport_error.emit("send while socket not open")
 		return ""
 	var request_id := _make_request_id()
-	var bytes := _encode_client_message(request_id, api_method, body)
+	var bytes := _encode_client_message(request_id, api_method, request_bytes)
 	var err := _socket.put_packet(bytes)
 	if err != OK:
 		transport_error.emit("put_packet failed: %s" % error_string(err))
@@ -168,10 +174,16 @@ func _drain_inbound() -> void:
 		if decoded.is_empty():
 			continue
 		var request_id: String = decoded.get("request_id", "")
-		var payload: Variant = decoded.get("payload", null)
 		if not request_id.is_empty():
 			_pending.erase(request_id)
-		envelope_received.emit(request_id, payload)
+		# payload carries the transport status + the serialized RPC response bytes;
+		# WarValidatorClient decodes those bytes per method (status_code 0 == OK).
+		envelope_received.emit(request_id, {
+			"ok": int(decoded.get("status_code", 0)) == 0,
+			"status_code": decoded.get("status_code", 0),
+			"status_message": decoded.get("status_message", ""),
+			"bytes": decoded.get("payload", PackedByteArray()),
+		})
 
 
 ## Fail any request that has outlived REQUEST_TIMEOUT_SEC.
@@ -207,44 +219,32 @@ func _make_request_id() -> String:
 	return "req-%d" % _next_seq
 
 
-## Encode a Hermes ClientMessage carrying an inner api request.
-##
-## Production: build the godobuf message and call `.to_bytes()`.
-## Skeleton:   frame a JSON envelope so the lifecycle is exercisable now. The
-##             JSON shape mirrors the proto fields one-for-one so swapping in
-##             godobuf is a drop-in.
-func _encode_client_message(request_id: String, api_method: String, body: Dictionary) -> PackedByteArray:
-	# TODO(skeleton): replace with godobuf encode, e.g.
-	#   var msg := HermesEnvelopePb.ClientMessage.new()
-	#   msg.set_request_id(request_id)
-	#   msg.set_api_method(api_method)        # snap-api-proxy method routing
-	#   msg.set_payload_json(JSON.stringify(body))  # body values already canonical
-	#   return msg.to_bytes()
-	var envelope := {
-		"request_id": request_id,
-		"api_method": api_method,
-		"body": body,
-	}
-	return JSON.stringify(envelope).to_utf8_buffer()
+## Encode a Hermes ClientMessage (binary protobuf) carrying a serialized RPC
+## request as the snap-api-proxy payload.
+func _encode_client_message(request_id: String, api_method: String, request_bytes: PackedByteArray) -> PackedByteArray:
+	var cm := HermesPb.ClientMessage.new()
+	cm.set_type("snap-api-proxy")
+	var api := cm.new_api_proxy()
+	api.set_request_id(request_id)
+	api.set_api_method(api_method)
+	api.set_payload(request_bytes)
+	return cm.to_bytes()
 
 
-## Decode a Hermes ServerMessage into {request_id, payload}.
-##
-## Production: parse with godobuf, pull out the inner api response.
-## Skeleton:   parse the JSON mirror produced by `_encode_client_message`'s
-##             counterpart on the validator. Returns {} on malformed input.
+## Decode a Hermes ServerMessage into {request_id, status_code, status_message,
+## payload(bytes)}. Returns {} on a malformed frame.
 func _decode_server_message(bytes: PackedByteArray) -> Dictionary:
-	# TODO(skeleton): replace with godobuf decode, e.g.
-	#   var msg := HermesEnvelopePb.ServerMessage.new()
-	#   if msg.from_bytes(bytes) != HermesEnvelopePb.PB_ERR.NO_ERRORS: return {}
-	#   return { "request_id": msg.get_request_id(),
-	#            "payload": JSON.parse_string(msg.get_payload_json()) }
-	var text := bytes.get_string_from_utf8()
-	var parsed: Variant = JSON.parse_string(text)
-	if typeof(parsed) != TYPE_DICTIONARY:
+	var sm := HermesPb.ServerMessage.new()
+	if sm.from_bytes(bytes) != HermesPb.PB_ERR.NO_ERRORS:
 		transport_error.emit("malformed server message")
 		return {}
+	if not sm.has_api_proxy():
+		transport_error.emit("server message missing api_proxy body")
+		return {}
+	var api := sm.get_api_proxy()
 	return {
-		"request_id": parsed.get("request_id", ""),
-		"payload": parsed.get("body", null),
+		"request_id": api.get_request_id(),
+		"status_code": api.get_status_code(),
+		"status_message": api.get_status_message(),
+		"payload": api.get_payload(),
 	}

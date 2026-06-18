@@ -54,6 +54,19 @@ describe("canonicalStringify", () => {
     expect(out).toBe('{\n  "a": 1,\n  "b": 2\n}');
   });
 
+  it("omits undefined members identically to null/absent (round-trip safety)", () => {
+    // An optional like pending_special is OMITTED from canonical JSON when null;
+    // re-parsing that JSON yields `undefined` for the missing key. The serializer
+    // must treat undefined as "absent" (omit it) exactly like null — matching
+    // GDScript, where a missing Dictionary key is simply never emitted. Regression:
+    // a flipped state round-tripped through parseState carried pending_special:
+    // undefined and the hasher threw "unsupported value type undefined".
+    const asUndef = canonicalStringify({ a: 1, pending_special: undefined, b: 2 });
+    expect(asUndef).toBe('{\n  "a": 1,\n  "b": 2\n}');
+    expect(asUndef).toBe(canonicalStringify({ a: 1, pending_special: null, b: 2 }));
+    expect(asUndef).toBe(canonicalStringify({ a: 1, b: 2 }));
+  });
+
   it("keeps null array elements as literal null", () => {
     expect(canonicalStringify([1, null, 2])).toBe("[\n  1,\n  null,\n  2\n]");
   });
@@ -106,6 +119,20 @@ describe("newGame", () => {
   it("is deterministic for a given seed", () => {
     expect(stateHash(newGame("abc"))).toBe(stateHash(newGame("abc")));
     expect(stateHash(newGame("abc"))).not.toBe(stateHash(newGame("xyz")));
+  });
+
+  it("hashes a state identically whether an optional is null, undefined, or absent", () => {
+    // The exact divergence that broke online play: the server persists canonical
+    // JSON (pending_special omitted), re-parses it (key -> undefined), applies an
+    // action, and re-hashes. That undefined must hash the same as the null/absent
+    // forms or every post-deal action would crash or mismatch over the wire.
+    const base = newGame("roundtrip-seed");
+    const asNull: GameState = { ...base, pending_special: null };
+    const asUndef = { ...base, pending_special: undefined } as unknown as GameState;
+    const { pending_special: _omit, ...rest } = base as Record<string, unknown>;
+    const asAbsent = rest as unknown as GameState;
+    expect(stateHash(asUndef)).toBe(stateHash(asNull));
+    expect(stateHash(asUndef)).toBe(stateHash(asAbsent));
   });
 });
 

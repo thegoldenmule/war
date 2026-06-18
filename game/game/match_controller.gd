@@ -54,6 +54,9 @@ var _validator: WarValidatorClient = null
 ## the seq of the latest local apply so a late reconcile for a stale action is
 ## ignored.
 var _apply_seq: int = 0
+## Guards CompleteMatch to a single send per match. Set when we finalize on an
+## authoritative-confirmed terminal phase; reset by new_game.
+var _completed_sent: bool = false
 
 
 ## Attach (or detach with null) the validator. Optional — a freshly-created
@@ -78,14 +81,28 @@ func has_state() -> bool:
 	return not _state.is_empty()
 
 
-## Start a brand-new match for `seed`. Builds the initial dealt state through
-## the engine's "new_game" action so the deterministic deal is identical to the
-## validator's. If online, also calls InitMatch so the server tracks this seed.
+## Start a brand-new match for `seed`.
 ##
-## Emits `state_changed` (and any deal events). Returns true on success.
+## OFFLINE: deal locally and synchronously through the engine's "new_game"
+## action (deterministic deal). Emits `state_changed` + deal events immediately.
+##
+## ONLINE: the server is the seed/state authority (anti seed-shop). We defer to
+## InitMatch and adopt the authoritative starting state when it arrives — pass an
+## empty `seed` to let the server assign one. The deal surfaces via `state_changed`
+## once the round-trip resolves (callers are signal-driven, so this is safe).
+##
+## Returns true once the new-game intent is accepted (the online deal lands async).
 func new_game(seed: String) -> bool:
-	# Begin from an empty state; the engine's new_game action is responsible
-	# for constructing the full dealt state for the seed (deterministic deal).
+	_completed_sent = false
+	if _validator != null and _validator.is_online():
+		_online_new_game(seed)
+		return true
+	return _offline_new_game(seed)
+
+
+## Local deterministic deal. Begin from an empty state; the engine's new_game
+## action constructs the full dealt state for the seed.
+func _offline_new_game(seed: String) -> bool:
 	var action := WarActions.new_game(seed)
 	var result: Dictionary = WarEngine.apply({}, action)
 	if not result.get("ok", false):
@@ -94,11 +111,26 @@ func new_game(seed: String) -> bool:
 	_adopt_state(result.get("state", {}))
 	_emit_events(result.get("events", []))
 	state_changed.emit(get_state())
-	# Tell the server about the seed in the background; offline returns "offline"
-	# and we simply rely on local determinism (parity contract guarantees match).
-	if _validator != null and _validator.is_online():
-		_init_match_async(seed)
 	return true
+
+
+## Online init-first deal: ask the validator for authoritative t0 state (and the
+## match id every later RPC binds to), then adopt it verbatim. By the determinism
+## parity contract the adopted state is byte-identical to what our own engine
+## would deal for the same seed — so the optimistic loop proceeds with no snap.
+func _online_new_game(seed: String) -> void:
+	# The server is the seed authority online (War's outcome IS the deal, so the
+	# seed must not be client-shoppable). We pass an EMPTY seed — the server
+	# assigns one and returns the authoritative t0 state we adopt verbatim. The
+	# caller's `seed` is only the offline-degrade fallback.
+	var res: Dictionary = await _validator.init_match("")
+	if not res.get("ok", false):
+		# Could not reach / init the server — degrade to an offline deal so the
+		# player still gets a game. Use the requested seed, or synthesize one.
+		push_warning("WarMatch: InitMatch failed (%s); dealing offline." % res.get("error", ""))
+		_offline_new_game(seed if not seed.is_empty() else _synth_seed())
+		return
+	_adopt_from_json(res.get("state_json", ""))
 
 
 ## Submit a player/CPU action. This is the single funnel for ALL game input:
@@ -122,7 +154,10 @@ func submit_action(action: Dictionary) -> bool:
 	_adopt_state(result.get("state", {}))
 	_emit_events(result.get("events", []))
 	state_changed.emit(get_state())
-	# Confirm with the authority (no-op / instant in offline mode).
+	# Confirm with the authority (no-op / instant in offline mode). Terminal
+	# finalize is deferred to _validate_async so it fires only once the server
+	# has CONFIRMED the terminal phase — never from optimistic state, which a
+	# mismatch could still reconcile back to a non-terminal phase.
 	if _validator != null and _validator.is_online():
 		_validate_async(action, _hash, my_seq)
 	return true
@@ -141,20 +176,21 @@ func _emit_events(events: Array) -> void:
 		event.emit(ev)
 
 
-## Background InitMatch so the server has authoritative starting state. We do
-## NOT overwrite our local deal on success — by the determinism parity contract
-## the server's deal for the same seed is byte-identical; we only reconcile if
-## a later ValidateAction proves otherwise.
-func _init_match_async(seed: String) -> void:
-	var res: Dictionary = await _validator.init_match(seed)
-	if not res.get("ok", false):
-		return
-	var server_hash: String = res.get("hash", "")
-	if not server_hash.is_empty() and server_hash != _hash:
-		# Deals diverged at t0 — a determinism bug. Snap to the server and warn
-		# loudly; this should never fire if parity holds.
-		push_warning("WarMatch: init deal hash mismatch (local=%s server=%s); snapping." % [_hash, server_hash])
-		_reconcile_from_json(res.get("state_json", ""))
+## Best-effort terminal finalize. Fire-and-forget: the result is telemetry only.
+func _complete_async() -> void:
+	await _validator.complete_match()
+
+
+## True when the current state is a terminal (game-over) phase.
+func _is_terminal() -> bool:
+	var phase: String = _state.get("phase", "")
+	return phase == "player_win" or phase == "cpu_win"
+
+
+## A deterministic-enough local fallback seed for when an online InitMatch fails
+## and we must deal offline. Only used on the degraded path.
+func _synth_seed() -> String:
+	return "local-%d" % int(Time.get_unix_time_from_system() * 1000.0)
 
 
 ## Background validation + reconcile for a submitted action.
@@ -174,12 +210,42 @@ func _validate_async(action: Dictionary, predicted_hash: String, from_seq: int) 
 			action_rejected.emit(action, res.get("error", "validator_rejected"))
 		return
 	if res.get("matched", false):
-		return  # Fast-path ACK: optimistic state confirmed; nothing to do.
+		# Fast-path ACK: optimistic state confirmed. Finalize if it was terminal.
+		_maybe_complete()
+		return
 	# MISMATCH: snap to authoritative state — but only if no newer local action
 	# has superseded this one (stale reconciles are dropped).
 	if from_seq != _apply_seq:
 		return
 	_reconcile_from_json(res.get("authoritative_state", ""))
+	_maybe_complete()
+
+
+## Fire CompleteMatch exactly once, and only when the AUTHORITATIVE state (just
+## confirmed by an ACK or a reconcile) is terminal. The validator also auto-
+## completes on a terminal ValidateAction, so this is a best-effort, idempotent
+## finalize — but gated on confirmation so we never close a match the server has
+## not actually seen reach game-over.
+func _maybe_complete() -> void:
+	if _completed_sent or not _is_terminal():
+		return
+	_completed_sent = true
+	_complete_async()
+
+
+## Adopt an authoritative INITIAL state from canonical JSON (online init-first).
+## Unlike `_reconcile_from_json` this is the first state, not a correction, so it
+## emits only `state_changed` (no `reconciled` — there is nothing to snap from).
+func _adopt_from_json(state_json: String) -> void:
+	if state_json.is_empty():
+		push_warning("WarMatch: empty authoritative init state")
+		return
+	var parsed: Variant = JSON.parse_string(state_json)
+	if typeof(parsed) != TYPE_DICTIONARY:
+		push_warning("WarMatch: could not parse authoritative init state JSON")
+		return
+	_adopt_state(parsed)
+	state_changed.emit(get_state())
 
 
 ## Parse a canonical-JSON authoritative state, adopt it, and announce the snap.

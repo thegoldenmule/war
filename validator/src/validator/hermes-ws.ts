@@ -24,6 +24,7 @@
 
 import type { Server, ServerWebSocket } from "bun";
 import { config } from "./config.ts";
+import { type HermesCodec } from "./proto.ts";
 import { ServiceError, validatorService, type ValidatorService } from "./service.ts";
 import { MatchNotFoundError, PlayerBindingError } from "./store/match-store.ts";
 
@@ -68,34 +69,6 @@ export function resolvePlayerId(req: Request): string | null {
   // TODO(skeleton): verify gateway User-Id against VALIDATOR_SHARED_SECRET.
   const userId = req.headers.get("User-Id");
   return userId && userId.trim() !== "" ? userId : null;
-}
-
-/**
- * Decode a raw Hermes ClientMessage frame into an InnerRequest.
- *
- * TODO(skeleton): replace the JSON fallback with protobufjs decode of the
- * Hermes envelope (loadHermesRoot from proto.ts) -> snap-api-proxy payload.
- * For local dev we accept a plain-JSON frame of the InnerRequest shape so the
- * endpoint is exercisable before the proto codec lands.
- */
-export function decodeEnvelope(raw: string | Buffer): InnerRequest {
-  const text = typeof raw === "string" ? raw : raw.toString("utf8");
-  const obj = JSON.parse(text) as Partial<InnerRequest>;
-  if (typeof obj.method !== "string") throw new Error("envelope missing `method`");
-  return {
-    method: obj.method,
-    requestId: typeof obj.requestId === "string" ? obj.requestId : "",
-    args: (obj.args as Record<string, unknown>) ?? {},
-  };
-}
-
-/**
- * Encode an InnerReply into a Hermes ServerMessage frame.
- *
- * TODO(skeleton): replace with protobufjs encode of the Hermes ServerMessage.
- */
-export function encodeEnvelope(reply: InnerReply): string {
-  return JSON.stringify(reply);
 }
 
 /**
@@ -171,21 +144,41 @@ export function routeRequest(
  * `websocket` option (see index.ts), and perform the upgrade in `fetch` on the
  * /hermes/ws path. Kept as a factory so tests can inject a service.
  */
-export function makeHermesWebSocketHandlers(svc: ValidatorService = validatorService) {
+export function makeHermesWebSocketHandlers(
+  codec: HermesCodec,
+  svc: ValidatorService = validatorService,
+) {
   return {
     open(ws: ServerWebSocket<WsData>) {
       console.log(`[hermes-ws] open conn=${ws.data.connId} player=${ws.data.playerId}`);
     },
 
     message(ws: ServerWebSocket<WsData>, raw: string | Buffer) {
-      let reply: InnerReply;
+      // Binary Hermes frames in, binary out. (A string frame is tolerated by
+      // decoding its bytes — but the client always sends binary protobuf.)
+      const bytes = typeof raw === "string" ? Buffer.from(raw) : raw;
+      let out: Uint8Array;
       try {
-        const req = decodeEnvelope(raw);
-        reply = routeRequest(req, ws.data.playerId, svc);
+        const { requestId, method, payload } = codec.decodeClient(bytes);
+        let reply: InnerReply;
+        try {
+          const args = codec.decodeRequestArgs(method, payload);
+          reply = routeRequest({ method, requestId, args }, ws.data.playerId, svc);
+        } catch (e) {
+          reply = { requestId, ok: false, error: (e as Error).message };
+        }
+        if (reply.ok) {
+          out = codec.encodeServer(requestId, 0, "", codec.encodeResponse(method, reply.data ?? {}));
+        } else {
+          // Transport/routing failure (unknown method, malformed payload): status_code
+          // != 0 with no body. (A domain rejection — illegal action — is ok:true here
+          // with the rejection carried inside the response message's own `ok` field.)
+          out = codec.encodeServer(requestId, 13, reply.error ?? "internal error", new Uint8Array());
+        }
       } catch (e) {
-        reply = { requestId: "", ok: false, error: `bad frame: ${(e as Error).message}` };
+        out = codec.encodeServer("", 13, `bad frame: ${(e as Error).message}`, new Uint8Array());
       }
-      ws.send(encodeEnvelope(reply));
+      ws.send(out);
     },
 
     close(ws: ServerWebSocket<WsData>, code: number) {

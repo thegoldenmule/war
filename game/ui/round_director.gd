@@ -162,6 +162,36 @@ func request_play_again() -> void:
 	_match.new_game(_fresh_seed())
 
 
+## Phase B seam (transport-agnostic): attach an authoritative validator and
+## (re)deal ONLINE. The server becomes the seed authority and every action is
+## reconciled against it. Input is HELD at BOOT through the connect/InitMatch
+## handshake; on success the authoritative t0 state lands via state_changed and
+## the resting beat resumes. A `client_error` at any point degrades to offline
+## (never a locked board — see `go_offline`).
+func connect_online(validator: WarValidatorClient) -> void:
+	if validator == null:
+		return
+	if not validator.client_error.is_connected(_on_validator_error):
+		validator.client_error.connect(_on_validator_error)
+	_arm(null)                       # cancel any pending offline auto-action
+	_emit(Beat.BOOT, [], true)       # hold input during the handshake
+	_match.set_validator(validator)
+	validator.connect_validator()
+	_match.new_game("")              # init-first: the server assigns seed + t0 state
+
+
+## Degrade to offline play: stop validating but KEEP the current board and keep
+## playing on the local deterministic engine. Does NOT re-deal — progress stands.
+func go_offline() -> void:
+	_match.set_validator(null)
+
+
+## A validator/transport failure: drop to offline rather than freezing the board.
+func _on_validator_error(reason: String) -> void:
+	push_warning("[Director] validator error (%s); degrading to offline." % reason)
+	go_offline()
+
+
 ## Leave the match: record it for the meta layer and route home. The meta/router
 ## autoloads are resolved through the tree (not as compile-time globals) so this
 ## Node still compiles in a headless `--script` run, where autoloads are absent.

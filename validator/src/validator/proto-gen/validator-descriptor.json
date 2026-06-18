@@ -1,0 +1,228 @@
+{
+  "nested": {
+    "hermes": {
+      "options": {
+        "go_package": "thegoldenmule/war/validator/gen/hermes;hermes"
+      },
+      "nested": {
+        "SnapApiProxyRequest": {
+          "fields": {
+            "request_id": {
+              "type": "string",
+              "id": 1
+            },
+            "api_method": {
+              "type": "string",
+              "id": 2
+            },
+            "payload": {
+              "type": "bytes",
+              "id": 3
+            }
+          }
+        },
+        "SnapApiProxyResponse": {
+          "fields": {
+            "request_id": {
+              "type": "string",
+              "id": 1
+            },
+            "status_code": {
+              "type": "int32",
+              "id": 2
+            },
+            "status_message": {
+              "type": "string",
+              "id": 3
+            },
+            "payload": {
+              "type": "bytes",
+              "id": 4
+            }
+          }
+        },
+        "ClientMessage": {
+          "oneofs": {
+            "body": {
+              "oneof": [
+                "api_proxy"
+              ]
+            }
+          },
+          "fields": {
+            "type": {
+              "type": "string",
+              "id": 1
+            },
+            "api_proxy": {
+              "type": "SnapApiProxyRequest",
+              "id": 2
+            }
+          }
+        },
+        "ServerMessage": {
+          "oneofs": {
+            "body": {
+              "oneof": [
+                "api_proxy"
+              ]
+            }
+          },
+          "fields": {
+            "type": {
+              "type": "string",
+              "id": 1
+            },
+            "api_proxy": {
+              "type": "SnapApiProxyResponse",
+              "id": 2
+            }
+          }
+        }
+      }
+    },
+    "war": {
+      "nested": {
+        "validator": {
+          "nested": {
+            "v1": {
+              "options": {
+                "go_package": "thegoldenmule/war/validator/gen/war/validator/v1;validatorv1"
+              },
+              "nested": {
+                "InitMatchRequest": {
+                  "fields": {
+                    "match_id": {
+                      "type": "string",
+                      "id": 1
+                    },
+                    "player_id": {
+                      "type": "string",
+                      "id": 2
+                    },
+                    "seed": {
+                      "type": "string",
+                      "id": 3
+                    },
+                    "predicted_state_json": {
+                      "type": "string",
+                      "id": 4
+                    },
+                    "predicted_hash": {
+                      "type": "string",
+                      "id": 5
+                    }
+                  }
+                },
+                "InitMatchResponse": {
+                  "fields": {
+                    "match_id": {
+                      "type": "string",
+                      "id": 1
+                    },
+                    "player_id": {
+                      "type": "string",
+                      "id": 2
+                    },
+                    "state_json": {
+                      "type": "string",
+                      "id": 3
+                    },
+                    "hash": {
+                      "type": "string",
+                      "id": 4
+                    },
+                    "error": {
+                      "type": "string",
+                      "id": 5
+                    }
+                  }
+                },
+                "ValidateActionRequest": {
+                  "fields": {
+                    "match_id": {
+                      "type": "string",
+                      "id": 1
+                    },
+                    "player_id": {
+                      "type": "string",
+                      "id": 2
+                    },
+                    "action_json": {
+                      "type": "string",
+                      "id": 3
+                    },
+                    "predicted_hash": {
+                      "type": "string",
+                      "id": 4
+                    }
+                  }
+                },
+                "ValidateActionResponse": {
+                  "fields": {
+                    "ok": {
+                      "type": "bool",
+                      "id": 1
+                    },
+                    "hash_matched": {
+                      "type": "bool",
+                      "id": 2
+                    },
+                    "authoritative_state_json": {
+                      "type": "string",
+                      "id": 3
+                    },
+                    "hash": {
+                      "type": "string",
+                      "id": 4
+                    },
+                    "events_json": {
+                      "type": "string",
+                      "id": 5
+                    },
+                    "error": {
+                      "type": "string",
+                      "id": 6
+                    }
+                  }
+                },
+                "CompleteMatchRequest": {
+                  "fields": {
+                    "match_id": {
+                      "type": "string",
+                      "id": 1
+                    },
+                    "player_id": {
+                      "type": "string",
+                      "id": 2
+                    }
+                  }
+                },
+                "CompleteMatchResponse": {
+                  "fields": {
+                    "match_id": {
+                      "type": "string",
+                      "id": 1
+                    },
+                    "final_phase": {
+                      "type": "string",
+                      "id": 2
+                    },
+                    "hash": {
+                      "type": "string",
+                      "id": 3
+                    },
+                    "error": {
+                      "type": "string",
+                      "id": 4
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

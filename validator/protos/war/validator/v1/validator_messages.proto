@@ -39,14 +39,17 @@ message InitMatchRequest {
 }
 
 message InitMatchResponse {
-  // True when the match was created (or already existed idempotently).
-  bool ok = 1;
-  // Authoritative initial game state as canonical JSON. Empty when ok == false.
-  string authoritative_state_json = 2;
-  // Hash of authoritative_state_json (64 lowercase hex chars).
-  string hash = 3;
-  // Non-empty error code/message when ok == false.
-  string error = 4;
+  // Server-assigned match id; the client threads it on every later call.
+  string match_id = 1;
+  // Player the match is bound to (echoes the authenticated id).
+  string player_id = 2;
+  // Authoritative initial (t0) game state as canonical JSON. Its state.seed is the
+  // authority — when the request seed was empty the server generated it here.
+  string state_json = 3;
+  // Hash of state_json (64 lowercase hex chars).
+  string hash = 4;
+  // Non-empty error code/message on failure.
+  string error = 5;
 }
 
 // ---------------------------------------------------------------------------
@@ -58,29 +61,27 @@ message InitMatchResponse {
 message ValidateActionRequest {
   string match_id = 1;
   string player_id = 2;
-  // The state the action was applied TO, as canonical JSON (the hash domain).
-  string state_json = 3;
-  // The action, as canonical JSON: { "type": string, ...args }.
-  string action_json = 4;
+  // The action, as canonical JSON: { "type": string, ...args }. The server is
+  // STATEFUL (it holds the authoritative state per match_id), so no prior state
+  // is sent — it applies the action to the state it already holds.
+  string action_json = 3;
   // Client-predicted hash of the resulting state (64 lowercase hex chars).
-  string predicted_hash = 5;
+  string predicted_hash = 4;
 }
 
 message ValidateActionResponse {
   // True when the action was legal and applied by the authoritative engine.
   bool ok = 1;
-  // True when predicted_hash matched the authoritative result hash. When true,
-  // authoritative_state_json MAY be omitted (the client keeps its optimistic
-  // state). When false, the client MUST snap to authoritative_state_json.
-  bool ack = 2;
-  // Authoritative resulting state as canonical JSON. Present on mismatch, and
-  // always present on the terminal (win) transitions for audit.
+  // True when predicted_hash matched the authoritative result hash (fast-path
+  // ACK). When false, the client MUST snap to authoritative_state_json.
+  bool hash_matched = 2;
+  // Authoritative resulting state as canonical JSON (present on mismatch; always
+  // present on the terminal transition for audit).
   string authoritative_state_json = 3;
   // Hash of authoritative_state_json (64 lowercase hex chars).
   string hash = 4;
-  // Engine events emitted by the transition, as a canonical-JSON array string
-  // (e.g. flips, war escalations, special-card resolutions). Informational; not
-  // part of the hashed state.
+  // Engine events emitted by the transition, as a canonical-JSON array string.
+  // Informational; not part of the hashed state.
   string events_json = 5;
   // Non-empty error code/message when ok == false (illegal/rejected action).
   string error = 6;
@@ -91,23 +92,18 @@ message ValidateActionResponse {
 // The validator records the outcome against the final authoritative state.
 // ---------------------------------------------------------------------------
 message CompleteMatchRequest {
+  // The server holds the final authoritative state under match_id, so completion
+  // needs only the match id + the bound player.
   string match_id = 1;
   string player_id = 2;
-  // Final state the client believes the match ended in, as canonical JSON.
-  string final_state_json = 3;
-  // Client-asserted final state hash (64 lowercase hex chars).
-  string final_hash = 4;
 }
 
 message CompleteMatchResponse {
-  // True when the validator accepted and recorded the completion.
-  bool ok = 1;
-  // Authoritative final game state as canonical JSON (for audit/reconcile).
-  string authoritative_state_json = 2;
-  // Hash of authoritative_state_json (64 lowercase hex chars).
+  string match_id = 1;
+  // Resolved terminal phase: "player_win" | "cpu_win".
+  string final_phase = 2;
+  // Hash of the authoritative final state (64 lowercase hex chars).
   string hash = 3;
-  // Resolved terminal phase: "player_win" | "cpu_win". Empty when ok == false.
-  string outcome = 4;
-  // Non-empty error code/message when ok == false.
-  string error = 5;
+  // Non-empty error code/message on failure.
+  string error = 4;
 }

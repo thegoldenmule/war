@@ -51,6 +51,16 @@ function makeMatchId(): string {
   return `m_${Date.now().toString(36)}_${rand}`;
 }
 
+/**
+ * Generate a server-authoritative match seed. Used when the client supplies an
+ * empty seed (init-first online): the server is the seed authority so a client
+ * cannot seed-shop for a favorable deal — War's outcome IS the deal.
+ */
+function makeSeed(): string {
+  const rand = Math.random().toString(36).slice(2, 12);
+  return `srv-${Date.now().toString(36)}-${rand}`;
+}
+
 export class ValidatorService {
   constructor(private readonly store: MatchStore = matchStore) {}
 
@@ -61,16 +71,23 @@ export class ValidatorService {
    * client mirrors this exact state to begin its optimistic loop.
    */
   initMatch(seed: string, playerId: string): InitResult {
-    if (!seed || typeof seed !== "string") {
-      throw new ServiceError("seed must be a non-empty string", "INVALID_ARGUMENT");
+    if (typeof seed !== "string") {
+      throw new ServiceError("seed must be a string", "INVALID_ARGUMENT");
     }
     if (!playerId || typeof playerId !== "string") {
       throw new ServiceError("playerId must be a non-empty string", "INVALID_ARGUMENT");
     }
 
-    const initialState = newGame(seed);
+    // Server is the seed authority: an empty seed means "you assign it" (anti
+    // seed-shop). The client adopts the returned state verbatim and, by the
+    // determinism-parity contract, reproduces the byte-identical deal.
+    const effectiveSeed = seed.trim() !== "" ? seed : makeSeed();
     const matchId = makeMatchId();
-    const record = this.store.init(matchId, playerId, seed, initialState);
+    // Deal the authoritative initial state from the (possibly server-assigned)
+    // seed. By the determinism-parity contract the client reproduces this exact
+    // deal, so its optimistic loop starts from a byte-identical state.
+    const initialState = newGame(effectiveSeed);
+    const record = this.store.init(matchId, playerId, effectiveSeed, initialState);
 
     return {
       matchId: record.matchId,
