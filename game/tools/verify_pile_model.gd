@@ -45,11 +45,29 @@ func _run() -> String:
 						return "cpu draw+win (%d) != cdeck (%d)" % [dc + vc, cdeck]
 					if vp > pdeck or vc > cdeck:
 						return "win exceeds deck (clamp failed) at wp=%d pdeck=%d" % [wp, pdeck]
+					# After recycle, a non-empty deck never shows a saturated win pile.
+					if pdeck > 0 and vp >= pdeck:
+						return "player win saturated deck (recycle did not fire) at wp=%d pdeck=%d" % [wp, pdeck]
+					if cdeck > 0 and vc >= cdeck:
+						return "cpu win saturated deck (recycle did not fire) at wc=%d cdeck=%d" % [wc, cdeck]
 
-	# Specific clamp + recycle: 30 won but only 10 in deck -> win 10, draw 0.
-	var clamped := PileModel.counts({"player": 30, "cpu": 0}, 10, 10)
-	if int(clamped["player"]["win"]) != 10 or int(clamped["player"]["draw"]) != 0:
-		return "clamp/recycle: 30 won over a 10-card deck should be win 10 / draw 0, got %s" % clamped["player"]
+	# Recycle: 30 won saturates a 10-card deck -> the win pile flips to draw (win 0 / draw 10).
+	var rec := PileModel.counts({"player": 30, "cpu": 0}, 10, 10)
+	if int(rec["player"]["win"]) != 0 or int(rec["player"]["draw"]) != 10:
+		return "recycle: 30 won over a 10-card deck should flip to win 0 / draw 10, got %s" % rec["player"]
+	# recycle() / recycled_sides() unit checks.
+	if int(PileModel.recycle({"player": 52, "cpu": 3}, 52, 52)["player"]) != 0:
+		return "recycle: a full win pile should reset to 0 (flip to draw)"
+	if int(PileModel.recycle({"player": 5, "cpu": 0}, 10, 10)["player"]) != 5:
+		return "recycle: a non-saturated win pile should be unchanged"
+	if int(PileModel.recycle({"player": 0, "cpu": 0}, 0, 0)["player"]) != 0:
+		return "recycle: an empty deck must not spuriously recycle"
+	var r_once := PileModel.recycle({"player": 99, "cpu": 7}, 20, 20)
+	if PileModel.recycle(r_once, 20, 20) != r_once:
+		return "recycle is not idempotent"
+	var sides := PileModel.recycled_sides({"player": 52, "cpu": 3}, 52, 52)
+	if not bool(sides["player"]) or bool(sides["cpu"]):
+		return "recycled_sides should flag exactly the saturated side(s)"
 
 	# --- accrue: award adds to winner; forfeit does NOT; new_game resets --------
 	var w := PileModel.empty()
@@ -102,7 +120,7 @@ func _run_real_match(seed: String) -> String:
 		# Invariants at the CURRENT state.
 		var pdeck: int = (st.get("player_deck", []) as Array).size()
 		var cdeck: int = (st.get("cpu_deck", []) as Array).size()
-		won = PileModel.clamp_to(won, pdeck, cdeck)
+		won = PileModel.recycle(won, pdeck, cdeck)
 		var c := PileModel.counts(won, pdeck, cdeck)
 		if int(c["player"]["draw"]) < 0 or int(c["cpu"]["draw"]) < 0:
 			return "negative draw mid-match at step %d" % steps
@@ -138,7 +156,7 @@ func _run_real_match(seed: String) -> String:
 	var final_state := m.get_state() as Dictionary
 	var fp: int = (final_state.get("player_deck", []) as Array).size()
 	var fc: int = (final_state.get("cpu_deck", []) as Array).size()
-	won = PileModel.clamp_to(won, fp, fc)
+	won = PileModel.recycle(won, fp, fc)
 	var fcounts := PileModel.counts(won, fp, fc)
 	m.free()
 	# Terminal conservation: winner holds all 52 (draw+win), loser holds 0.

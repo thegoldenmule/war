@@ -49,8 +49,7 @@ static func accrue(won: Dictionary, events: Array) -> Dictionary:
 	return out
 
 
-## The accumulator clamped to the live deck sizes (the recycle write-back). Keep
-## the view's `_won` pinned to this so a reconcile snap self-corrects.
+## The accumulator clamped to the live deck sizes. Internal helper for recycle().
 static func clamp_to(won: Dictionary, pdeck: int, cdeck: int) -> Dictionary:
 	return {
 		"player": clampi(int(won.get("player", 0)), 0, maxi(0, pdeck)),
@@ -58,10 +57,34 @@ static func clamp_to(won: Dictionary, pdeck: int, cdeck: int) -> Dictionary:
 	}
 
 
-## Clamp + derive the per-player draw/win counts from the accumulator and the live
-## deck sizes: { player:{draw,win}, cpu:{draw,win} }, with draw + win == deck per side.
-static func counts(won: Dictionary, pdeck: int, cdeck: int) -> Dictionary:
+## The accumulator after a RECYCLE: when a side's win pile SATURATES its deck
+## (won >= deck > 0 — the drawing deck has run dry and the engine is drawing recycled
+## cards), the win pile flips over to become the new drawing deck, so won resets to 0
+## (draw -> full deck). Pure + idempotent; preserves draw + win == deck. Keep the view's
+## `_won` pinned to this so a reconcile snap self-corrects.
+static func recycle(won: Dictionary, pdeck: int, cdeck: int) -> Dictionary:
 	var c := clamp_to(won, pdeck, cdeck)
+	return {
+		"player": 0 if (pdeck > 0 and int(c["player"]) >= pdeck) else int(c["player"]),
+		"cpu": 0 if (cdeck > 0 and int(c["cpu"]) >= cdeck) else int(c["cpu"]),
+	}
+
+
+## Which sides WOULD recycle at these (won, deck) — for edge-detecting the recycle
+## animation. Pure: true iff the (clamped) win pile saturates a non-empty deck.
+static func recycled_sides(won: Dictionary, pdeck: int, cdeck: int) -> Dictionary:
+	var c := clamp_to(won, pdeck, cdeck)
+	return {
+		"player": pdeck > 0 and int(c["player"]) >= pdeck,
+		"cpu": cdeck > 0 and int(c["cpu"]) >= cdeck,
+	}
+
+
+## Derive the per-player draw/win counts from the accumulator and the live deck sizes
+## (after recycle): { player:{draw,win}, cpu:{draw,win} }, with draw + win == deck per
+## side. After a recycle a saturated win pile reads as a full draw pile (win 0).
+static func counts(won: Dictionary, pdeck: int, cdeck: int) -> Dictionary:
+	var c := recycle(won, pdeck, cdeck)
 	var wp: int = c["player"]
 	var wc: int = c["cpu"]
 	return {

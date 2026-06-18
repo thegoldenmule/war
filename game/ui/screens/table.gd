@@ -41,6 +41,9 @@ var _beat_name: int = RoundDirector.Beat.BOOT
 ## to the live deck sizes on every render (the recycle write-back).
 var _won: Dictionary = {"player": 0, "cpu": 0}
 var _prev_phase: String = ""
+## Edge-tracker so a win-pile recycle (win deck flips to draw deck) animates ONCE,
+## not on every subsequent render while still saturated.
+var _recycled: Dictionary = {"player": false, "cpu": false}
 
 # ── Node refs (built in _ready) ───────────────────────────────────────────────
 var _phase_label: Label = null
@@ -304,11 +307,13 @@ func _render(state: Dictionary) -> void:
 	# new_game event from its resting-beat payload, so detect the restart by phase.
 	if (_prev_phase == "" or _is_terminal(_prev_phase)) and not _is_terminal(phase):
 		_won = PileModel.empty()
+		_recycled = {"player": false, "cpu": false}
 
 	var pdeck: int = (state.get("player_deck", []) as Array).size()
 	var cdeck: int = (state.get("cpu_deck", []) as Array).size()
-	# Recycle write-back: pin the accumulator to what is actually held.
-	_won = PileModel.clamp_to(_won, pdeck, cdeck)
+	# Recycle write-back: pin the accumulator to what is actually held, flipping a
+	# saturated win pile back to the draw pile (recycle is pure + idempotent).
+	_won = PileModel.recycle(_won, pdeck, cdeck)
 	_paint_piles()
 
 	# Current cards: the staked pot card (face-down until flipped). Empty between rounds.
@@ -382,8 +387,8 @@ func _apply_win_loss(cpu_pot: Variant, player_pot: Variant) -> void:
 
 func _phase_caption(phase: String, war_depth: int) -> String:
 	match phase:
-		"dealt": return "DEALING…"
-		"selected": return "FLIP MOMENT · play a special, or flip"
+		"dealt": return "YOUR DRAW · tap FLIP to draw & reveal"
+		"selected": return "DRAWING…"
 		"flipped": return "REVEALED"
 		"war": return "WAR · depth %d" % war_depth
 		"player_win": return "YOU WIN"
@@ -401,11 +406,16 @@ func _on_beat(beat_id: int, events: Array, locked: bool) -> void:
 	_beat_name = beat_id
 	var B := RoundDirector.Beat
 
-	# Primary action button — enabled only at the two decision beats.
+	# Primary action button: "FLIP CARD" at the DEAL_PROMPT draw moment (and on the
+	# special-window FLIP_MOMENT, which arrives unlocked); "DECLARE WAR" at the war
+	# prompt; disabled on every auto/locked beat.
 	match beat_id:
-		B.FLIP_MOMENT:
+		B.DEAL_PROMPT:
 			_action_button.text = "FLIP CARD"
 			_action_button.disabled = false
+		B.FLIP_MOMENT:
+			_action_button.text = "FLIP CARD"
+			_action_button.disabled = locked   # enabled only on the special-window path
 		B.WAR_PROMPT:
 			_action_button.text = "DECLARE WAR"
 			_action_button.disabled = false
@@ -413,7 +423,8 @@ func _on_beat(beat_id: int, events: Array, locked: bool) -> void:
 			_action_button.text = "—"
 			_action_button.disabled = true
 
-	# USE SPECIAL — legal only at the flip moment with an owned, unstaged special.
+	# USE SPECIAL — legal only at the flip moment with an owned, unstaged special (so
+	# only when FLIP_MOMENT arrives unlocked; owned.is_empty() keeps it off in basic).
 	var owned: Array = _state.get("specials", {}).get("player", [])
 	var has_pending := _state.get("pending_special", null) != null
 	_special_button.disabled = beat_id != B.FLIP_MOMENT or has_pending or owned.is_empty()
@@ -424,13 +435,20 @@ func _on_beat(beat_id: int, events: Array, locked: bool) -> void:
 
 	# Accrue the cosmetic win pile EXACTLY ONCE per apply: only on the result/terminal
 	# beat, never on WAR_REVEALING (a war win's award rides in both WAR_REVEALING and
-	# ROUND_RESULT — accruing on both would double-count).
+	# ROUND_RESULT — accruing on both would double-count). Edge-detect a recycle (win
+	# pile saturated the deck) BEFORE the recycle write-back, and animate it once.
 	if beat_id == B.ROUND_RESULT or beat_id == B.GAME_OVER:
-		_won = PileModel.accrue(_won, events)
 		var pdeck: int = (_state.get("player_deck", []) as Array).size()
 		var cdeck: int = (_state.get("cpu_deck", []) as Array).size()
-		_won = PileModel.clamp_to(_won, pdeck, cdeck)
+		_won = PileModel.accrue(_won, events)
+		var sides := PileModel.recycled_sides(_won, pdeck, cdeck)
+		_won = PileModel.recycle(_won, pdeck, cdeck)
 		_paint_piles()
+		if bool(sides["player"]) and not bool(_recycled["player"]):
+			_queue_recycle_anim("player")
+		if bool(sides["cpu"]) and not bool(_recycled["cpu"]):
+			_queue_recycle_anim("cpu")
+		_recycled = sides
 
 	_play_beat_animation(beat_id, events)
 
@@ -442,8 +460,9 @@ func _play_beat_animation(beat_id: int, events: Array) -> void:
 		return
 	var B := RoundDirector.Beat
 	match beat_id:
-		B.STAGING:
-			# Draw a card from each drawing deck to the current-card slot, both sides.
+		B.DRAWING:
+			# The tap drew a card: it flies from each drawing deck into the current slot,
+			# both sides, just before the auto-flip reveals them.
 			_fly.fly_back(_cpu_draw.get_global_rect(), _cpu_card.get_global_rect(), _fly_dur("stage"))
 			_fly.fly_back(_player_draw.get_global_rect(), _player_card.get_global_rect(), _fly_dur("stage"))
 		B.WAR_REVEALING:
@@ -468,6 +487,19 @@ func _award_winner(events: Array) -> String:
 	return ""
 
 
+## Recycle flourish: when a side's win deck flips to become its new drawing deck, sweep
+## a couple of cards from the win slot onto the draw slot. Cosmetic; the static counts
+## are already correct (counts() applies the recycle), so a skipped flight is harmless.
+func _queue_recycle_anim(who: String) -> void:
+	if _fly == null:
+		return
+	var win_slot: Panel = _player_win if who == "player" else _cpu_win
+	var draw_slot: Panel = _player_draw if who == "player" else _cpu_draw
+	var dur := _fly_dur("result")
+	_fly.fly_back(win_slot.get_global_rect(), draw_slot.get_global_rect(), dur)
+	_fly.fly_back(win_slot.get_global_rect(), draw_slot.get_global_rect(), dur, 0.05)
+
+
 ## Flight duration: a fraction of the owning beat's tempo (kept coupled to the
 ## Director's TEMPO/SPEED so a tempo change keeps flights finishing in time).
 func _fly_dur(key: String) -> float:
@@ -478,6 +510,8 @@ func _fly_dur(key: String) -> float:
 
 func _on_action_pressed() -> void:
 	match _beat_name:
+		RoundDirector.Beat.DEAL_PROMPT:
+			_director.request_deal_and_flip()
 		RoundDirector.Beat.FLIP_MOMENT:
 			_director.request_flip()
 		RoundDirector.Beat.WAR_PROMPT:

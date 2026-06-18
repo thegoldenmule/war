@@ -61,8 +61,9 @@ signal beat(name: int, events: Array, locked: bool)
 ## Cosmetic beats — pacing only, distinct from the engine phase (the truth).
 enum Beat {
 	BOOT,           # before the first deal
-	STAGING,        # phase "dealt"    — auto: submit start_round
-	FLIP_MOMENT,    # phase "selected" — await: request_flip / request_special
+	DEAL_PROMPT,    # phase "dealt"    — AWAIT: request_deal_and_flip (one tap draws + flips)
+	DRAWING,        # transient        — a card flies from each deck into the current slots
+	FLIP_MOMENT,    # phase "selected" — basic: auto-flip; special window: await flip/special
 	REVEALING,      # phase "flipped"  — auto: play reveal, then submit resolve
 	ROUND_RESULT,   # transient        — hold winner highlight, then next round
 	WAR_BANNER,     # transient        — "I. DECLARE. WAR." on entering a tie
@@ -76,7 +77,7 @@ enum Beat {
 # reveal tail is `_dur("flip") + _dur("read")`. These change WHEN an auto-action
 # fires, never WHICH, so the parity/hash domain is untouched by any value here.
 const TEMPO := {
-	"stage": 0.22,       # STAGING: deal/slide-in lock, ends by submitting start_round
+	"stage": 0.22,       # DRAWING: draw-in flight from each deck into the current slots
 	"flip": 0.30,        # REVEALING: card-flip animation
 	"read": 0.35,        # REVEALING tail: dwell on revealed faces, then submit resolve
 	"result": 0.90,      # ROUND_RESULT: winner highlight + deck-delta hold
@@ -102,6 +103,10 @@ var _pending: SceneTreeTimer = null
 var _pending_cb: Callable = Callable()
 ## Events of the most-recent apply, buffered by `_on_event`, consumed by `_on_state`.
 var _last_events: Array = []
+## The staged round's specials, captured in `_on_state` so `_has_preflip_special()`
+## can gate the FLIP_MOMENT auto-flip. Always empty in the basic loop.
+var _specials_player: Array = []
+var _pending_special: Variant = null
 ## Optional fixed seed for the OPENING deal. Empty -> a fresh local seed each
 ## match (the offline default). Set before the Director enters the tree to make a
 ## deterministic deal (used by verifiers; the Phase B seam for a server seed).
@@ -126,6 +131,15 @@ func _ready() -> void:
 # intent fired during an animation/transient is simply dropped — never queued.
 # ---------------------------------------------------------------------------
 
+## The signature tap each round: at DEAL_PROMPT (phase "dealt") the player commits to
+## the round. Submits start_round; the resulting "selected" state chains the DRAWING
+## draw-in then auto-flips (basic loop), so one tap visibly draws AND flips.
+func request_deal_and_flip() -> void:
+	_intent(WarActions.start_round(), Beat.DEAL_PROMPT)
+
+
+## Flip after the draw. Only reachable when FLIP_MOMENT AWAITS — i.e. a pre-flip
+## special is available (the special window); in the basic loop FLIP_MOMENT auto-flips.
 func request_flip() -> void:
 	_intent(WarActions.flip(), Beat.FLIP_MOMENT)
 
@@ -143,7 +157,7 @@ func request_declare_war() -> void:
 	_intent(WarActions.ack_war(), Beat.WAR_PROMPT)
 
 
-## Deal a brand-new match (offline self-generates a fresh seed). Restarts at STAGING.
+## Deal a brand-new match (offline self-generates a fresh seed). Restarts at DEAL_PROMPT.
 func request_play_again() -> void:
 	_match.new_game(_fresh_seed())
 
@@ -201,6 +215,10 @@ func _on_state(state: Dictionary) -> void:
 	_last_events = []
 	var phase := String(state.get("phase", ""))
 	var depth := int(state.get("war_depth", 0))
+	# Capture the staged round's specials BEFORE deriving, so `_has_preflip_special()`
+	# can gate the FLIP_MOMENT auto-flip when `_enter_resting` runs (now or after a chain).
+	_specials_player = (state.get("specials", {}) as Dictionary).get("player", [])
+	_pending_special = state.get("pending_special", null)
 	var resting := beat_for_phase(phase)
 	view_state.emit(state)
 	if resting == Beat.GAME_OVER:
@@ -230,14 +248,23 @@ func _play_chain(chain: Array, events: Array, resting: int, depth: int) -> void:
 	_arm(_transient_dur(head, depth), func() -> void: _play_chain(chain, events, resting, depth))
 
 
-## Enter the resting beat for a phase: emit it (locked unless it awaits the
-## player) and arm its auto-action if it has one. Exactly one auto-action is armed
-## per resting entry; FLIP_MOMENT / shallow WAR_PROMPT / GAME_OVER arm nothing.
+## Enter the resting beat for a phase: emit it (locked unless it awaits the player)
+## and arm its auto-action if it has one. DEAL_PROMPT / shallow WAR_PROMPT / GAME_OVER
+## await a tap. FLIP_MOMENT auto-flips in the basic loop, but AWAITS (unlocked) when a
+## pre-flip special is available — the Special Cards seam.
 func _enter_resting(resting: int, depth: int) -> void:
-	_emit(resting, [], not _is_decision_beat(resting))
+	# FLIP_MOMENT is unlocked ONLY on the special-window path; otherwise it is a locked
+	# auto beat. Every other beat's lock follows the static decision-beat predicate.
+	var locked := not _is_decision_beat(resting)
+	if resting == Beat.FLIP_MOMENT:
+		locked = not _has_preflip_special()
+	_emit(resting, [], locked)
 	match resting:
-		Beat.STAGING:
-			_arm(_dur("stage"), func() -> void: _match.submit_action(WarActions.start_round()))
+		Beat.FLIP_MOMENT:
+			if _has_preflip_special():
+				_arm(null)                                   # await request_flip / request_special
+			else:
+				_arm(_dur("flip"), func() -> void: _match.submit_action(WarActions.flip()))
 		Beat.REVEALING:
 			_arm(_dur("flip") + _dur("read"), func() -> void: _match.submit_action(WarActions.resolve()))
 		Beat.WAR_PROMPT:
@@ -246,7 +273,7 @@ func _enter_resting(resting: int, depth: int) -> void:
 			else:
 				_arm(null)                                   # await request_declare_war
 		_:
-			_arm(null)                                       # FLIP_MOMENT / GAME_OVER: await intent
+			_arm(null)                                       # DEAL_PROMPT / GAME_OVER: await intent
 
 
 func _emit(b: int, events: Array, locked: bool) -> void:
@@ -278,7 +305,7 @@ func _arm(seconds, cb := Callable()) -> void:
 ## the driver and are never returned here.
 static func beat_for_phase(phase: String) -> int:
 	match phase:
-		"dealt":                 return Beat.STAGING
+		"dealt":                 return Beat.DEAL_PROMPT
 		"selected":              return Beat.FLIP_MOMENT
 		"flipped":               return Beat.REVEALING
 		"war":                   return Beat.WAR_PROMPT
@@ -286,18 +313,21 @@ static func beat_for_phase(phase: String) -> int:
 		_:                       return Beat.BOOT
 
 
-## The ordered transient holds implied by one apply's events (given its resting
-## beat). WAR_REVEALING (an ack_war's stake reveal) is CHAINED ahead of the
-## ROUND_RESULT (a win) or WAR_BANNER (a re-tie) of the SAME apply, because the
-## engine emits `war_decide` together with the `award`/`tie`. `tie` and `award`
-## are mutually exclusive within an apply.
+## The ordered transient holds implied by one apply's events (given its resting beat).
+## DRAWING (the draw-in) rides the start_round apply (`round_staged`, resting FLIP_MOMENT).
+## WAR_REVEALING (an ack_war's stake reveal) is CHAINED ahead of the ROUND_RESULT (a win)
+## or WAR_BANNER (a re-tie) of the SAME apply, because the engine emits `war_decide`
+## together with the `award`/`tie`. `tie` and `award` are mutually exclusive within an
+## apply, and `round_staged` never co-occurs with `war_decide`.
 static func transient_chain(events: Array, resting: int) -> Array:
 	var chain: Array = []
 	if _has(events, "war_decide"):
 		chain.append(Beat.WAR_REVEALING)
+	if _has(events, "round_staged"):
+		chain.append(Beat.DRAWING)
 	if _has(events, "tie"):
 		chain.append(Beat.WAR_BANNER)
-	elif _has(events, "award") and resting == Beat.STAGING:
+	elif _has(events, "award") and resting == Beat.DEAL_PROMPT:
 		chain.append(Beat.ROUND_RESULT)
 	return chain
 
@@ -305,6 +335,7 @@ static func transient_chain(events: Array, resting: int) -> Array:
 ## Duration of a transient beat (presentation-only). War transients scale by depth.
 func _transient_dur(b: int, depth: int) -> float:
 	match b:
+		Beat.DRAWING:       return _dur("stage")
 		Beat.WAR_REVEALING: return _dur("war_stake", depth)
 		Beat.WAR_BANNER:    return _dur("war_banner", depth)
 		Beat.ROUND_RESULT:  return _dur("result")
@@ -322,9 +353,12 @@ static func war_scale(depth: int) -> float:
 	return max(WAR_MIN_SCALE, pow(WAR_DECAY, max(0, depth - 1)))
 
 
-## True for the beats that wait for a player and must never be auto-skipped.
+## True for the beats that wait for a player and must never be auto-skipped. Note
+## FLIP_MOMENT is NOT here: in the basic loop it auto-flips (a locked auto beat), and
+## on the special-window path it awaits but arms no auto-action (so request_skip, which
+## requires a valid armed callback, is a no-op there too — the choice is never skipped).
 static func _is_decision_beat(b: int) -> bool:
-	return b == Beat.FLIP_MOMENT or b == Beat.WAR_PROMPT or b == Beat.GAME_OVER
+	return b == Beat.DEAL_PROMPT or b == Beat.WAR_PROMPT or b == Beat.GAME_OVER
 
 
 ## Does any buffered event carry this `type`?
@@ -340,6 +374,14 @@ static func _has(events: Array, t: String) -> bool:
 ## special. Always true in the basic loop.
 func can_auto_ack() -> bool:
 	return true
+
+
+## Seam: true when the staged round offers a playable pre-flip special, in which case
+## FLIP_MOMENT AWAITS (the special window) instead of auto-flipping. Always false in the
+## basic loop (no specials owned), so one tap draws + flips. The Special Cards feature
+## broadens this; mirrors `can_auto_ack()`.
+func _has_preflip_special() -> bool:
+	return _pending_special == null and not _specials_player.is_empty()
 
 
 # --- seed sources -----------------------------------------------------------

@@ -6,12 +6,13 @@ extends SceneTree
 ## -> flip (engine-illegal). Now it owns a WarRoundDirector, renders from view_state,
 ## and drives buttons/overlays SOLELY from beat(locked). This verifier instantiates
 ## the actual scene and asserts:
-##   - a fresh deal STAGES (start_round) and settles at the FLIP_MOMENT — a non-empty
-##     'dealt' state renders (52 cards on the table), so the silent no-deal cannot recur;
-##   - at the flip moment the primary button reads FLIP CARD + is enabled, USE SPECIAL
-##     is disabled (no owned specials in the basic loop), and the skip-catcher is hidden;
-##   - pressing the primary button submits a FLIP and the engine advances;
-##   - a locked beat (REVEALING) shows the skip-catcher and disables the primary button.
+##   - a fresh deal renders a non-empty 'dealt' state (52 cards across the six pile/card
+##     slots) and settles at the DEAL_PROMPT, so the silent no-deal cannot recur;
+##   - at the DEAL_PROMPT the current-card slots are EMPTY, the primary button reads
+##     FLIP CARD + is enabled, USE SPECIAL is disabled, and the skip-catcher is hidden;
+##   - pressing FLIP CARD draws on the click (start_round -> 'selected') and the locked
+##     DRAWING beat shows the skip-catcher + disables the button;
+##   - injecting a terminal state shows the VICTORY result overlay (and conserves 52).
 ##
 ## Run headless:
 ##   godot --headless --path game --script res://tools/verify_table_wiring.gd
@@ -48,19 +49,19 @@ func _run() -> String:
 		_retire(t)
 		return "table did not create a Director with a live WarMatch"
 
-	# Reach the FLIP_MOMENT, fast-forwarding the deal/stage via the tap-catcher.
+	# Reach the DEAL_PROMPT — the draw decision, reached right after the deal.
 	var guard := 0
-	while int(t._beat_name) != int(B.FLIP_MOMENT) and guard < 5000:
+	while int(t._beat_name) != int(B.DEAL_PROMPT) and guard < 5000:
 		await process_frame
 		if int(t._beat_name) == int(B.GAME_OVER):
 			_retire(t)
-			return "reached GAME_OVER before any FLIP_MOMENT (deal never staged?)"
+			return "reached GAME_OVER before any DEAL_PROMPT (deal never happened?)"
 		if t._skip_catcher.visible:
 			t._director.request_skip()
 		guard += 1
-	if int(t._beat_name) != int(B.FLIP_MOMENT):
+	if int(t._beat_name) != int(B.DEAL_PROMPT):
 		_retire(t)
-		return "never reached the FLIP_MOMENT (start_new_game / dealt->flip regression?)"
+		return "never reached the DEAL_PROMPT (start_new_game / deal regression?)"
 
 	# Three piles per player exist and are distinct Panels; the fly layer sits ABOVE
 	# the table but BELOW the overlays + skip-catcher.
@@ -87,11 +88,15 @@ func _run() -> String:
 	if not String(t._player_draw_cap.text).begins_with("DRAW"):
 		_retire(t)
 		return "player draw-pile caption did not render ('%s')" % t._player_draw_cap.text
+	# At the DEAL_PROMPT the current-card slots are EMPTY — nothing is drawn until the tap.
+	if not (st.get("player_pot", []) as Array).is_empty() or not (st.get("cpu_pot", []) as Array).is_empty():
+		_retire(t)
+		return "a card is already staged at DEAL_PROMPT (the draw should happen on the tap)"
 
-	# Button gating at the flip moment.
+	# Button gating at the draw decision.
 	if t._action_button.disabled:
 		_retire(t)
-		return "primary button is disabled at the FLIP_MOMENT"
+		return "primary button is disabled at the DEAL_PROMPT"
 	if String(t._action_button.text) != "FLIP CARD":
 		_retire(t)
 		return "primary button label is '%s', expected 'FLIP CARD'" % t._action_button.text
@@ -100,33 +105,35 @@ func _run() -> String:
 		return "USE SPECIAL is enabled with no owned specials (basic loop should disable it)"
 	if t._skip_catcher.visible:
 		_retire(t)
-		return "skip-catcher is visible at the FLIP_MOMENT (unlocked beat should not catch taps)"
+		return "skip-catcher is visible at the DEAL_PROMPT (unlocked beat should not catch taps)"
 
-	# Pressing the primary button submits a FLIP; the engine advances.
+	# Pressing FLIP CARD draws a card on the click: request_deal_and_flip -> start_round
+	# -> phase 'selected', and the DRAWING (draw-in) transient is now showing (locked).
 	var phase_before := String(t._director._match.get_state().get("phase", ""))
 	t._on_action_pressed()
-	await process_frame
 	var phase_after := String(t._director._match.get_state().get("phase", ""))
-	if phase_before != "selected":
+	if phase_before != "dealt":
 		_retire(t)
-		return "engine phase at FLIP_MOMENT was '%s', expected 'selected'" % phase_before
-	if phase_after != "flipped" and phase_after != "war":
+		return "engine phase at DEAL_PROMPT was '%s', expected 'dealt'" % phase_before
+	if phase_after != "selected":
 		_retire(t)
-		return "pressing FLIP did not advance the engine (phase '%s' -> '%s')" % [phase_before, phase_after]
-
-	# A locked beat catches taps and disables the primary button. After a non-tie flip
-	# the beat is REVEALING (locked); after a tie it is WAR_BANNER (also locked).
-	if int(t._beat_name) != int(B.FLIP_MOMENT) and int(t._beat_name) != int(B.WAR_PROMPT):
-		if not t._skip_catcher.visible:
-			_retire(t)
-			return "skip-catcher is hidden on a locked beat %d (taps would not fast-forward)" % t._beat_name
-		if not t._action_button.disabled:
-			_retire(t)
-			return "primary button is enabled on a locked beat %d" % t._beat_name
+		return "pressing FLIP at DEAL_PROMPT did not draw (phase '%s' -> '%s', expected -> selected)" % [phase_before, phase_after]
+	if int(t._beat_name) != int(B.DRAWING):
+		_retire(t)
+		return "after the draw tap the beat is %d, expected DRAWING (the draw-in)" % t._beat_name
+	# The DRAWING beat is locked: the skip-catcher catches taps and the button is disabled.
+	if not t._skip_catcher.visible:
+		_retire(t)
+		return "skip-catcher is hidden on the locked DRAWING beat"
+	if not t._action_button.disabled:
+		_retire(t)
+		return "primary button is enabled on the locked DRAWING beat"
 
 	# Fly-layer: TWO simultaneous flights (the draw-in / win-sweep case) each get their
 	# OWN tween — reusing one tween fails with "Can't append to a Tween that has started".
-	# Explicit rects so flights are created regardless of headless layout timing.
+	# Clear first (the DRAWING beat already queued the draw-in flights), then use explicit
+	# rects so flights are created regardless of headless layout timing.
+	t._fly.clear()
 	t._fly.fly_back(Rect2(Vector2(10, 10), Vector2(128, 180)), Rect2(Vector2(300, 300), Vector2(128, 180)), 0.5)
 	t._fly.fly_back(Rect2(Vector2(20, 20), Vector2(128, 180)), Rect2(Vector2(400, 400), Vector2(128, 180)), 0.5, 0.05)
 	if t._fly.get_child_count() != 2:

@@ -33,12 +33,12 @@ func _run() -> String:
 	if Director == null:
 		return "round_director.gd failed to preload"
 	var B = Director.Beat
-	if Director.beat_for_phase("dealt") != B.STAGING:
+	if Director.beat_for_phase("dealt") != B.DEAL_PROMPT:
 		return "Director smoke check failed — round_director.gd did not compile cleanly"
 
 	# --- beat_for_phase: the resting-beat mapping -----------------------------
 	var phase_map := {
-		"dealt": B.STAGING,
+		"dealt": B.DEAL_PROMPT,
 		"selected": B.FLIP_MOMENT,
 		"flipped": B.REVEALING,
 		"war": B.WAR_PROMPT,
@@ -86,6 +86,10 @@ func _run() -> String:
 	if not is_equal_approx(d._transient_dur(B.WAR_REVEALING, 1), 0.45):
 		d.free()
 		return "_transient_dur(WAR_REVEALING, depth 1) = %s, expected 0.45" % d._transient_dur(B.WAR_REVEALING, 1)
+	# DRAWING (the draw-in) runs for the 'stage' tempo (0.22).
+	if not is_equal_approx(d._transient_dur(B.DRAWING, 0), 0.22):
+		d.free()
+		return "_transient_dur(DRAWING) = %s, expected 0.22" % d._transient_dur(B.DRAWING, 0)
 	d.free()
 
 	# --- transient_chain: the ordered transient holds per apply ----------------
@@ -93,11 +97,12 @@ func _run() -> String:
 	if chain_err != "":
 		return chain_err
 
-	# --- _is_decision_beat: which beats await the player -----------------------
-	for db in [B.FLIP_MOMENT, B.WAR_PROMPT, B.GAME_OVER]:
+	# --- _is_decision_beat: which beats await the player. DEAL_PROMPT is the new draw
+	# decision; FLIP_MOMENT is NOT static-decision (basic loop auto-flips). -----------
+	for db in [B.DEAL_PROMPT, B.WAR_PROMPT, B.GAME_OVER]:
 		if not Director._is_decision_beat(db):
 			return "_is_decision_beat(%d) should be true" % db
-	for ab in [B.STAGING, B.REVEALING, B.ROUND_RESULT, B.WAR_BANNER, B.WAR_REVEALING, B.BOOT]:
+	for ab in [B.DRAWING, B.FLIP_MOMENT, B.REVEALING, B.ROUND_RESULT, B.WAR_BANNER, B.WAR_REVEALING, B.BOOT]:
 		if Director._is_decision_beat(ab):
 			return "_is_decision_beat(%d) should be false" % ab
 
@@ -107,17 +112,18 @@ func _run() -> String:
 ## Each case: (events, resting_beat) -> expected ordered transient chain.
 func _check_chains(B) -> String:
 	var cases := [
-		# No transient: deal / stage / a clean reveal.
-		[[_ev("new_game")], B.STAGING, []],
-		[[_ev("round_staged")], B.FLIP_MOMENT, []],
+		# new_game settles at DEAL_PROMPT with no transient.
+		[[_ev("new_game")], B.DEAL_PROMPT, []],
+		# start_round (round_staged) -> the DRAWING draw-in transient, then settle FLIP_MOMENT.
+		[[_ev("round_staged")], B.FLIP_MOMENT, [B.DRAWING]],
 		[[_ev("flip")], B.REVEALING, []],
-		# A decisive resolve -> ROUND_RESULT.
-		[[_ev("flip"), _ev("award")], B.STAGING, [B.ROUND_RESULT]],
-		[[_ev("steal_tie_fired"), _ev("award")], B.STAGING, [B.ROUND_RESULT]],
+		# A decisive resolve returns to 'dealt' (DEAL_PROMPT) -> ROUND_RESULT.
+		[[_ev("flip"), _ev("award")], B.DEAL_PROMPT, [B.ROUND_RESULT]],
+		[[_ev("steal_tie_fired"), _ev("award")], B.DEAL_PROMPT, [B.ROUND_RESULT]],
 		# A flip tie -> straight to the WAR banner (no war_decide yet).
 		[[_ev("flip"), _ev("tie")], B.WAR_PROMPT, [B.WAR_BANNER]],
 		# ack_war that WINS the round: stake reveal THEN the result (the chaining fix).
-		[[_ev("war_decide"), _ev("award")], B.STAGING, [B.WAR_REVEALING, B.ROUND_RESULT]],
+		[[_ev("war_decide"), _ev("award")], B.DEAL_PROMPT, [B.WAR_REVEALING, B.ROUND_RESULT]],
 		# ack_war that RE-TIES: stake reveal THEN the next war banner (the chaining fix).
 		[[_ev("war_decide"), _ev("tie")], B.WAR_PROMPT, [B.WAR_REVEALING, B.WAR_BANNER]],
 		# A terminal apply: transient_chain yields nothing (the resting beat is GAME_OVER,
