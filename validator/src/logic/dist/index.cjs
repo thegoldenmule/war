@@ -553,6 +553,8 @@ function ackWar(next) {
     events.push({ type: "game_over", winner });
     return makeResult(true, next, events, "");
   }
+  const pCards = [];
+  const cCards = [];
   for (let i = 0; i < WAR_STAKE; i++) {
     const pfd = pd.shift();
     const cfd = cd.shift();
@@ -560,6 +562,8 @@ function ackWar(next) {
     cfd.face_up = false;
     next.player_pot.push(pfd);
     next.cpu_pot.push(cfd);
+    pCards.push(cardSummary(pfd));
+    cCards.push(cardSummary(cfd));
   }
   const pDec = pd.shift();
   const cDec = cd.shift();
@@ -567,6 +571,8 @@ function ackWar(next) {
   cDec.face_up = true;
   next.player_pot.push(pDec);
   next.cpu_pot.push(cDec);
+  pCards.push(cardSummary(pDec));
+  cCards.push(cardSummary(cDec));
   next.war_depth = next.war_depth + 1;
   const pRank = pDec.rank;
   const cRank = cDec.rank;
@@ -574,7 +580,9 @@ function ackWar(next) {
     type: "war_decide",
     depth: next.war_depth,
     player: pRank,
-    cpu: cRank
+    cpu: cRank,
+    player_cards: pCards,
+    cpu_cards: cCards
   });
   if (pRank > cRank) {
     awardPotsTo(next, "player", events);
@@ -631,6 +639,9 @@ function topSummary(pot) {
   }
   const top = pot[pot.length - 1];
   return { rank: top.rank, suit: top.suit };
+}
+function cardSummary(card) {
+  return { rank: card.rank, suit: card.suit };
 }
 function stateHash(state) {
   return hashValue(state);

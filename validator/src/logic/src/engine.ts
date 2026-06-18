@@ -367,6 +367,11 @@ function ackWar(next: GameState): ApplyResult {
     return makeResult(true, next, events, "");
   }
 
+  // The staked cards are ALSO collected (as {rank,suit} summaries) for the war_decide
+  // event so the reveal UI can flip them face-up — presentation metadata only; it rides
+  // the (un-hashed) events, never the state, so the canonical JSON / hash is unchanged.
+  const pCards: Record<string, unknown>[] = [];
+  const cCards: Record<string, unknown>[] = [];
   for (let i = 0; i < WAR_STAKE; i++) {
     const pfd = pd.shift() as Card;
     const cfd = cd.shift() as Card;
@@ -374,14 +379,20 @@ function ackWar(next: GameState): ApplyResult {
     cfd.face_up = false;
     next.player_pot.push(pfd);
     next.cpu_pot.push(cfd);
+    pCards.push(cardSummary(pfd));
+    cCards.push(cardSummary(cfd));
   }
 
+  // The deciding face-up card is appended LAST, so it is the final element of each
+  // *_cards array — the decider the reveal flips for the win.
   const pDec = pd.shift() as Card;
   const cDec = cd.shift() as Card;
   pDec.face_up = true;
   cDec.face_up = true;
   next.player_pot.push(pDec);
   next.cpu_pot.push(cDec);
+  pCards.push(cardSummary(pDec));
+  cCards.push(cardSummary(cDec));
   next.war_depth = next.war_depth + 1;
 
   const pRank = pDec.rank;
@@ -391,6 +402,8 @@ function ackWar(next: GameState): ApplyResult {
     depth: next.war_depth,
     player: pRank,
     cpu: cRank,
+    player_cards: pCards,
+    cpu_cards: cCards,
   });
 
   if (pRank > cRank) {
@@ -467,6 +480,12 @@ function topSummary(pot: Card[]): Record<string, unknown> {
   }
   const top = pot[pot.length - 1] as Card;
   return { rank: top.rank, suit: top.suit };
+}
+
+/// A {rank,suit} summary of a single card — for presentation-only event payloads (e.g. the
+/// war_decide staked cards the reveal UI flips). Mirrors topSummary's shape.
+function cardSummary(card: Card): Record<string, unknown> {
+  return { rank: card.rank, suit: card.suit };
 }
 
 // --------------------------------------------------------------------------

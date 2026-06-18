@@ -57,9 +57,9 @@ const ACTION_BTN_BOTTOM_GAP := 48          # gap below the buttons so they aren'
 const WAR_BET_ENABLED := false             # economy wager row in the IT'S WAR modal
 const WAR_SPECIAL_ENABLED := false         # war-time USE SPECIAL row in the IT'S WAR modal
 const WAR_BET_STARS := 70                   # placeholder wager shown on the (hidden) BET row
-# Footprint of the small staked cards in the I-DECLARE-WAR reveal (3 backs + 1 decider).
-const WAR_STAKE_BACK_SIZE := Vector2(48, 66)
-const WAR_DECIDER_SIZE := Vector2(72, 100)
+# Footprint of the staked cards in the I-DECLARE-WAR reveal (3 spoils + 1 decider per side,
+# uniform so the two rows line up as pairs the reveal flips column by column).
+const WAR_REVEAL_CARD_SIZE := Vector2(60, 84)
 
 ## Local validator Hermes endpoint reached by pressing V (dev affordance). The
 ## deployed build would point this at the Snapser gateway.
@@ -118,9 +118,18 @@ var _war_declare_button: Button = null
 var _war_bet_button: Button = null          # deferred (WAR_BET_ENABLED); built, hidden
 var _war_special_button: Button = null      # deferred (WAR_SPECIAL_ENABLED); built, hidden
 var _war_continue_button: Button = null
+var _war_victory_label: Label = null
 var _war_reveal_cpu_row: HBoxContainer = null
 var _war_reveal_you_row: HBoxContainer = null
 var _war_reveal_tween: Tween = null
+# The reveal's per-card slots + their {rank,suit} data (from the war_decide event), and
+# whether the flip sequence has finished — so a mid-sequence tap fast-forwards it, and only
+# once the winner is shown does a tap advance the (gated) beat.
+var _war_cpu_cards: Array = []
+var _war_you_cards: Array = []
+var _war_cpu_data: Array = []
+var _war_you_data: Array = []
+var _war_reveal_done: bool = false
 var _special_modal: SpecialCarousel = null
 var _result_overlay: Control = null
 var _result_label: Label = null
@@ -423,23 +432,32 @@ func _build_war_prompt_panel() -> Panel:
 func _build_war_reveal_panel() -> Panel:
 	var panel := Panel.new()
 	_center_fixed(panel)
-	panel.custom_minimum_size = Vector2(360, 460)
+	panel.custom_minimum_size = Vector2(380, 470)
 	panel.add_theme_stylebox_override("panel", WarPalette.box(WarPalette.PANEL_HI, WarPalette.ACCENT, 4))
-	var col := _panel_column(panel, 20, 14)
-	_war_reveal_cpu_row = _stake_row()
-	col.add_child(_war_reveal_cpu_row)
+	var col := _panel_column(panel, 20, 12)
 	var cry := Label.new()
 	cry.text = "I DECLARE WAR!"
 	cry.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	cry.add_theme_color_override("font_color", WarPalette.ACCENT_DEEP)
-	cry.add_theme_font_size_override("font_size", 34)
+	cry.add_theme_font_size_override("font_size", 30)
 	col.add_child(cry)
+	# CPU row (top) + YOU row (bottom): 3 spoils + 1 decider each, populated per reveal.
+	_war_reveal_cpu_row = _stake_row()
+	col.add_child(_war_reveal_cpu_row)
 	_war_reveal_you_row = _stake_row()
 	col.add_child(_war_reveal_you_row)
+	# The big victory moment — text + colour set when the decider pair lands.
+	_war_victory_label = Label.new()
+	_war_victory_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_war_victory_label.add_theme_font_size_override("font_size", 38)
+	_war_victory_label.custom_minimum_size = Vector2(0, 54)
+	col.add_child(_war_victory_label)
+	# CONTINUE appears only once the winner is shown (the reveal owns input until then).
 	_war_continue_button = WarPalette.button("CONTINUE", true, 28)
 	_war_continue_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_war_continue_button.custom_minimum_size = Vector2(0, 80)
+	_war_continue_button.custom_minimum_size = Vector2(0, 72)
 	_war_continue_button.pressed.connect(_on_war_continue_pressed)
+	_war_continue_button.visible = false
 	col.add_child(_war_continue_button)
 	return panel
 
@@ -475,12 +493,12 @@ static func _center_fixed(c: Control) -> void:
 	c.grow_vertical = Control.GROW_DIRECTION_BOTH
 
 
-## An empty centered HBox sized to hold one decider's height — populated per reveal.
+## An empty centered HBox sized to hold one reveal card's height — populated per reveal.
 func _stake_row() -> HBoxContainer:
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", 8)
-	row.custom_minimum_size = Vector2(0, WAR_DECIDER_SIZE.y)
+	row.custom_minimum_size = Vector2(0, WAR_REVEAL_CARD_SIZE.y)
 	return row
 
 
@@ -739,67 +757,145 @@ func _award_winner(events: Array) -> String:
 ## player/cpu are the deciding RANKS (the suited cards are gone once the pot is
 ## awarded, so the reveal is rank-only). Each side: WAR_STAKE face-down backs + the 1
 ## face-up decider, the winner's decider outlined green / loser red. Then a pop-in.
+## Build both rows face-down from the war_decide event's staked cards, reset the victory
+## banner + CONTINUE, then start the pair-by-pair flip sequence. The event carries the real
+## staked cards (engine.gd attaches player_cards/cpu_cards to war_decide) — each is the 3
+## spoils followed by the deciding card.
 func _populate_war_reveal(events: Array) -> void:
+	if _war_reveal_tween != null and _war_reveal_tween.is_valid():
+		_war_reveal_tween.kill()
 	var decide := _find_event(events, "war_decide")
-	# Clear whatever the previous war left in the rows.
-	for row in [_war_reveal_cpu_row, _war_reveal_you_row]:
-		for child in row.get_children():
-			child.queue_free()
-	if decide.is_empty():
+	_war_cpu_data = (decide.get("cpu_cards", []) as Array).duplicate(true)
+	_war_you_data = (decide.get("player_cards", []) as Array).duplicate(true)
+	_war_cpu_cards = _build_reveal_row(_war_reveal_cpu_row, _war_cpu_data.size())
+	_war_you_cards = _build_reveal_row(_war_reveal_you_row, _war_you_data.size())
+	_war_victory_label.text = ""
+	_war_continue_button.visible = false
+	_war_continue_button.disabled = true
+	_war_reveal_done = false
+	if _war_cpu_data.is_empty() or _war_you_data.is_empty():
+		# No staked-card payload (shouldn't happen) — just expose CONTINUE.
+		_war_reveal_done = true
+		_war_continue_button.visible = true
+		_war_continue_button.disabled = false
 		return
-	var p_rank := int(decide.get("player", 0))
-	var c_rank := int(decide.get("cpu", 0))
-	_fill_stake_row(_war_reveal_cpu_row, c_rank, _decider_border(c_rank, p_rank))
-	_fill_stake_row(_war_reveal_you_row, p_rank, _decider_border(p_rank, c_rank))
-	_animate_war_reveal()
+	_start_war_reveal()
 
 
-## Border colour for a decider: green if it beats the opponent, red if it loses, neutral
-## on a re-tie (which simply escalates the war again — no winner yet).
+## (Re)build a row of face-down card slots (the last column is the deciding card, set off
+## by a small gap). Returns the card slots in stake order [spoil0, spoil1, spoil2, decider].
+func _build_reveal_row(row: HBoxContainer, count: int) -> Array:
+	for child in row.get_children():
+		row.remove_child(child)
+		child.queue_free()
+	var cards: Array = []
+	for i in range(count):
+		if i == count - 1 and count > 1:
+			var sep := Control.new()
+			sep.custom_minimum_size = Vector2(14, 0)
+			row.add_child(sep)
+		var slot := CardVisual.make_slot(WAR_REVEAL_CARD_SIZE, 30)
+		CardVisual.paint_back(slot, slot.get_child(0) as Label)
+		slot.pivot_offset = WAR_REVEAL_CARD_SIZE * 0.5
+		row.add_child(slot)
+		cards.append(slot)
+	return cards
+
+
+## Choreograph the reveal: flip each pair (CPU + YOU together) left to right with a beat
+## between them — a longer pause before the deciding pair — then show the winner. Driven on
+## the reveal's own tween; the WAR_REVEALING beat is gated, so nothing advances until the
+## player taps CONTINUE (a tap mid-sequence fast-forwards via `_finish_war_reveal_now`).
+func _start_war_reveal() -> void:
+	var n: int = _war_cpu_cards.size()
+	_war_reveal_tween = create_tween()
+	for i in range(n):
+		if i > 0:
+			_war_reveal_tween.tween_interval(0.55 if i == n - 1 else 0.4)
+		_war_reveal_tween.tween_callback(_flip_reveal_pair.bind(i))
+	_war_reveal_tween.tween_interval(0.5)
+	_war_reveal_tween.tween_callback(_show_war_winner)
+
+
+## Flip the i-th column: the CPU card and the YOU card together.
+func _flip_reveal_pair(i: int) -> void:
+	if i < _war_cpu_cards.size():
+		_flip_reveal_card(_war_cpu_cards[i], _war_cpu_data[i])
+	if i < _war_you_cards.size():
+		_flip_reveal_card(_war_you_cards[i], _war_you_data[i])
+
+
+## A 2D card flip: squash to the edge, swap the back for the face, expand back out.
+func _flip_reveal_card(slot: Panel, card: Dictionary) -> void:
+	var lbl := slot.get_child(0) as Label
+	var tw := create_tween()
+	tw.tween_property(slot, "scale:x", 0.05, 0.11).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	tw.tween_callback(func() -> void: CardVisual.paint_face(slot, lbl, card))
+	tw.tween_property(slot, "scale:x", 1.0, 0.11).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+
+
+## The big victory moment: outline the deciding pair (winner green / loser red), then pop in
+## the WAR result banner and expose CONTINUE. Idempotent — also the snap target for a tap
+## fast-forward.
+func _show_war_winner() -> void:
+	_war_reveal_done = true
+	var n: int = _war_cpu_cards.size()
+	if n == 0:
+		return
+	var p_rank: int = int((_war_you_data[n - 1] as Dictionary).get("rank", 0))
+	var c_rank: int = int((_war_cpu_data[n - 1] as Dictionary).get("rank", 0))
+	_outline_card(_war_you_cards[n - 1], _decider_border(p_rank, c_rank))
+	_outline_card(_war_cpu_cards[n - 1], _decider_border(c_rank, p_rank))
+	var text := "WAR AGAIN!"
+	var color: Color = WarPalette.ACCENT_DEEP
+	if p_rank > c_rank:
+		text = "YOU WIN THE WAR!"
+		color = WarPalette.WIN
+	elif c_rank > p_rank:
+		text = "CPU WINS THE WAR!"
+		color = WarPalette.LOSE
+	_war_victory_label.text = text
+	_war_victory_label.add_theme_color_override("font_color", color)
+	_war_victory_label.pivot_offset = _war_victory_label.size * 0.5
+	_war_victory_label.scale = Vector2(0.6, 0.6)
+	_war_victory_label.modulate.a = 0.0
+	var tw := create_tween()
+	tw.set_parallel(true)
+	tw.tween_property(_war_victory_label, "scale", Vector2.ONE, 0.32).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_property(_war_victory_label, "modulate:a", 1.0, 0.2)
+	_war_continue_button.visible = true
+	_war_continue_button.disabled = false
+
+
+## Outline a face-up card slot (the winner/loser highlight on the deciding pair).
+func _outline_card(slot: Panel, color: Color) -> void:
+	slot.add_theme_stylebox_override("panel", WarPalette.box(WarPalette.CARD_FACE, color, 4))
+
+
+## Snap the whole reveal to its end NOW: all cards face-up, the winner shown. The fast-
+## forward for a tap mid-sequence — the player still sees the outcome, just instantly.
+func _finish_war_reveal_now() -> void:
+	if _war_reveal_tween != null and _war_reveal_tween.is_valid():
+		_war_reveal_tween.kill()
+	for i in range(_war_cpu_cards.size()):
+		var sc: Panel = _war_cpu_cards[i]
+		sc.scale = Vector2.ONE
+		CardVisual.paint_face(sc, sc.get_child(0) as Label, _war_cpu_data[i])
+	for j in range(_war_you_cards.size()):
+		var sp: Panel = _war_you_cards[j]
+		sp.scale = Vector2.ONE
+		CardVisual.paint_face(sp, sp.get_child(0) as Label, _war_you_data[j])
+	_show_war_winner()
+
+
+## Border colour for a decider: green if it beats the opponent, red if it loses, neutral on
+## a re-tie (which simply escalates the war again — no winner yet).
 func _decider_border(mine: int, theirs: int) -> Color:
 	if mine > theirs:
 		return WarPalette.WIN
 	if mine < theirs:
 		return WarPalette.LOSE
 	return WarPalette.INK
-
-
-## Lay WAR_STAKE face-down backs, then the face-up decider (rank-only, `border` outline).
-func _fill_stake_row(row: HBoxContainer, decider_rank: int, border: Color) -> void:
-	for _i in range(WarConstants.WAR_STAKE):
-		var back := CardVisual.make_slot(WAR_STAKE_BACK_SIZE, 22)
-		CardVisual.paint_back(back, back.get_child(0) as Label)
-		row.add_child(back)
-	var dec := CardVisual.make_slot(WAR_DECIDER_SIZE, 40)
-	CardVisual.paint_rank(dec, dec.get_child(0) as Label, decider_rank)
-	dec.add_theme_stylebox_override("panel", WarPalette.box(WarPalette.CARD_FACE, border, 4))
-	row.add_child(dec)
-
-
-## "Three cards pop out" — a short staggered scale/fade-in across both rows. Self-
-## contained presentation (its own tween, killed + restarted each reveal); fits inside
-## the WAR_REVEALING transient's window so it isn't clipped by the auto-advance.
-func _animate_war_reveal() -> void:
-	if _war_reveal_tween != null and _war_reveal_tween.is_valid():
-		_war_reveal_tween.kill()
-	var cards: Array = []
-	cards.append_array(_war_reveal_cpu_row.get_children())
-	cards.append_array(_war_reveal_you_row.get_children())
-	if cards.is_empty():
-		return
-	_war_reveal_tween = create_tween()
-	_war_reveal_tween.set_parallel(true)
-	var i := 0
-	for c in cards:
-		var ctrl := c as Control
-		ctrl.pivot_offset = ctrl.custom_minimum_size * 0.5
-		ctrl.scale = Vector2(0.4, 0.4)
-		ctrl.modulate.a = 0.0
-		var delay := i * 0.04
-		_war_reveal_tween.tween_property(ctrl, "scale", Vector2.ONE, 0.16) \
-			.set_delay(delay).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-		_war_reveal_tween.tween_property(ctrl, "modulate:a", 1.0, 0.12).set_delay(delay)
-		i += 1
 
 
 ## The first buffered event of `type` (or an empty Dictionary if none).
@@ -892,6 +988,11 @@ func _on_special_selected(id: String) -> void:
 
 
 func _on_skip_pressed() -> void:
+	# During the WAR reveal a tap fast-forwards the flip sequence to the winner; only once
+	# the winner is shown does a tap advance the (gated) beat to the next round / war.
+	if _beat_name == RoundDirector.Beat.WAR_REVEALING and not _war_reveal_done:
+		_finish_war_reveal_now()
+		return
 	_director.request_skip()
 
 

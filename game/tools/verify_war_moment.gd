@@ -88,27 +88,46 @@ func _run() -> String:
 		_retire(t)
 		return "DECLARE WAR is enabled during the locked WAR_BANNER lead-in"
 
-	# ── 3. WAR_REVEALING: the "I DECLARE WAR!" stake reveal from war_decide ─────
-	# K(13) beats 7 → YOU win this decider (player=13), CPU loses (cpu=7).
-	t._on_beat(B.WAR_REVEALING, [{"type": "war_decide", "depth": 2, "player": 13, "cpu": 7}], true)
+	# ── 3. WAR_REVEALING: the reveal builds BOTH sides from the event's staked cards
+	#       (face-down), holds with CONTINUE hidden, and a fast-forward shows the winner.
+	# YOU's decider K(13) beats CPU's 7 → "YOU WIN THE WAR!".
+	var decide := {
+		"type": "war_decide", "depth": 2, "player": 13, "cpu": 7,
+		"player_cards": [_c(4, "clubs"), _c(9, "hearts"), _c(2, "spades"), _c(13, "spades")],
+		"cpu_cards": [_c(5, "diamonds"), _c(8, "clubs"), _c(6, "hearts"), _c(7, "diamonds")],
+	}
+	t._on_beat(B.WAR_REVEALING, [decide], true)
 	if t._war_prompt_panel.visible or not t._war_reveal_panel.visible:
 		_retire(t)
 		return "WAR_REVEALING did not swap to the reveal panel"
-	if not t._skip_catcher.visible:
+	if t._war_cpu_cards.size() != 4 or t._war_you_cards.size() != 4:
 		_retire(t)
-		return "skip-catcher hidden during the locked reveal (tap-anywhere-to-continue broken)"
-	var need := int(WarConstants.WAR_STAKE) + 1   # 3 backs + 1 decider
-	if t._war_reveal_cpu_row.get_child_count() != need or t._war_reveal_you_row.get_child_count() != need:
+		return "reveal did not build 4 cards per side (cpu=%d, you=%d)" % [t._war_cpu_cards.size(), t._war_you_cards.size()]
+	if t._war_reveal_done:
 		_retire(t)
-		return "reveal rows not laid out as %d cards (cpu=%d, you=%d)" % \
-			[need, t._war_reveal_cpu_row.get_child_count(), t._war_reveal_you_row.get_child_count()]
-	# The decider is the LAST child of each row; YOU's should read "K" (rank 13).
-	var you_dec: Panel = t._war_reveal_you_row.get_child(need - 1)
-	if String((you_dec.get_child(0) as Label).text) != "K":
+		return "reveal marked done before the flip sequence ran"
+	if t._war_continue_button.visible:
 		_retire(t)
-		return "YOU decider label is '%s', expected 'K' (rank 13)" % (you_dec.get_child(0) as Label).text
+		return "CONTINUE shown before the winner is revealed"
+	# Fast-forward the sequence to the winner.
+	t._finish_war_reveal_now()
+	if not t._war_reveal_done:
+		_retire(t)
+		return "fast-forward did not finish the reveal"
+	if String(t._war_victory_label.text) != "YOU WIN THE WAR!":
+		_retire(t)
+		return "victory banner is '%s', expected 'YOU WIN THE WAR!'" % t._war_victory_label.text
+	if not t._war_continue_button.visible or t._war_continue_button.disabled:
+		_retire(t)
+		return "CONTINUE not exposed after the winner is shown"
+	# The deciding YOU card (last slot) is now face-up — the K (paint_face shows "K\n<suit>").
+	var you_dec: Panel = t._war_you_cards[3]
+	if not String((you_dec.get_child(0) as Label).text).begins_with("K"):
+		_retire(t)
+		return "YOU deciding card is not the face-up K (got '%s')" % (you_dec.get_child(0) as Label).text
 
-	# ── 4. DECLARE WAR resolves the engine AND the reveal HOLDS (gated; no auto-advance) ──
+	# ── 4. DECLARE WAR resolves the engine, the reveal HOLDS (gated), a tap FAST-FORWARDS,
+	#       and a second tap advances. The engine attaches the real staked cards to war_decide.
 	t._director._match._reconcile_from_json(JSON.stringify(_war_state()))
 	await process_frame
 	if int(t._beat_name) != int(B.WAR_PROMPT):
@@ -119,22 +138,30 @@ func _run() -> String:
 	if String(t._director._match.get_state().get("phase", "")) != "dealt":
 		_retire(t)
 		return "DECLARE WAR did not resolve the war in the engine (expected phase 'dealt')"
-	# ...but the Director HOLDS the reveal: it sits at WAR_REVEALING with NO armed timer, so
-	# the staked cards stay up until the player taps CONTINUE (the no-auto-advance fix).
+	# ...but the Director HOLDS the reveal at WAR_REVEALING with NO armed timer, built from
+	# the engine's real staked cards (4 per side).
 	if int(t._beat_name) != int(B.WAR_REVEALING):
 		_retire(t)
 		return "the reveal did not hold at WAR_REVEALING after DECLARE WAR (got beat %d)" % t._beat_name
 	if t._director._pending != null:
 		_retire(t)
 		return "the WAR reveal armed an auto-timer (it must AWAIT the player's CONTINUE)"
-	if not t._war_reveal_panel.visible:
+	if t._war_you_data.size() != 4 or t._war_cpu_data.size() != 4:
 		_retire(t)
-		return "reveal panel not visible while the reveal is held"
-	# CONTINUE advances past the held reveal.
-	t._on_war_continue_pressed()
+		return "the real war_decide did not carry 4 staked cards per side (you=%d, cpu=%d)" % [t._war_you_data.size(), t._war_cpu_data.size()]
+	# A tap during the reveal FAST-FORWARDS the sequence; it must NOT advance the beat yet.
+	t._on_skip_pressed()
+	if not t._war_reveal_done:
+		_retire(t)
+		return "a tap during the reveal did not fast-forward it to the winner"
+	if int(t._beat_name) != int(B.WAR_REVEALING):
+		_retire(t)
+		return "a fast-forward tap advanced the beat (it should only finish the reveal)"
+	# Now a tap (winner shown) advances past the held reveal.
+	t._on_skip_pressed()
 	if int(t._beat_name) == int(B.WAR_REVEALING):
 		_retire(t)
-		return "CONTINUE did not advance past the held WAR reveal"
+		return "tapping after the winner did not advance past the held reveal"
 
 	_retire(t)
 	return ""
@@ -160,6 +187,11 @@ func _cards(ranks: Array) -> Array:
 	for r in ranks:
 		out.append({"rank": int(r), "suit": "spades", "face_up": false})
 	return out
+
+
+## A {rank,suit} card summary (the shape the war_decide event carries for the reveal).
+func _c(rank: int, suit: String) -> Dictionary:
+	return {"rank": rank, "suit": suit}
 
 
 func _retire(t) -> void:

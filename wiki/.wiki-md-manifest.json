@@ -1,6 +1,6 @@
 {
   "ws:mqia7lmo-000o-afo5re": {
-    "version": 1102,
+    "version": 1103,
     "files": {
       "game-war/architecture/index.md": "a8dbc2248926c3a757dcdfe5f1cac0b0d79f86e87c4f54a9c8114f3611dcae70",
       "game-war/features/index.md": "fafc6e3dbb95a9c0ef96faad1aee87aeba6a6ec18a807381b882ca72ea909dcc",
@@ -42,7 +42,7 @@
       "game-war/features/special-cards/implementation-plan-special-cards.md": "d1902bb92bb7d60a980eac220adfeb5a90f6cf63a3b38c4a5d84dd6cce870ebd",
       "game-war/features/special-cards/testing-plan-special-cards.md": "410d29c5b0666568b675233f9039db583df2cbbced7070c2a7a7cf8f91f4c404",
       "game-war/features/special-cards/spec-special-cards.md": "04fade6a984ef3cc7448bd851b4c0cae6efdc6b8c1bea61fdaf6afefdcd07fdb",
-      "game-war/features/the-i-declare-war-moment/index.md": "5b05be87dc35b2d71c4ed2b11bf99591d045bf51bbf502bcd6e9e6114581830d",
+      "game-war/features/the-i-declare-war-moment/index.md": "bd0fe7d1b06bc333c14b54f1766ed4c64bd308bd5419a97ae8e3bf31893b7676",
       "game-war/features/the-i-declare-war-moment/implementation-plan-the-i-declare-war-moment.md": "33f3c6755d4dfb788f11e6c43c9ef24c8fa74a48a604e4ec2f74bbdeb97e81bc",
       "game-war/features/the-i-declare-war-moment/testing-plan-the-i-declare-war-moment.md": "bcfd6e5378d754ce924c2da00909c9e47f0d4427268cf6cfc0d7421bf920f3ba",
       "game-war/features/the-i-declare-war-moment/spec-the-i-declare-war-moment.md": "b6ad2cbaabf46572e0877926c06674bc850a146afd8c5e9832a35675a2ccf28f",

@@ -276,7 +276,12 @@ static func _ack_war(next: Dictionary) -> Dictionary:
 		events.append({"type": "game_over", "winner": winner})
 		return _result(true, next, events, "")
 
-	# Stake WAR_STAKE face-down cards from each deck into each pot.
+	# Stake WAR_STAKE face-down cards from each deck into each pot. The staked cards are
+	# ALSO collected (as {rank,suit} summaries) for the war_decide event so the reveal UI
+	# can flip them face-up — presentation metadata only; it rides the (un-hashed) events,
+	# never the state, so the canonical JSON / hash is unchanged.
+	var p_cards: Array = []
+	var c_cards: Array = []
 	for _i in range(C.WAR_STAKE):
 		var pfd: Dictionary = pd.pop_front()
 		var cfd: Dictionary = cd.pop_front()
@@ -284,14 +289,19 @@ static func _ack_war(next: Dictionary) -> Dictionary:
 		cfd["face_up"] = false
 		next["player_pot"].append(pfd)
 		next["cpu_pot"].append(cfd)
+		p_cards.append(_card_summary(pfd))
+		c_cards.append(_card_summary(cfd))
 
-	# Stake the deciding face-up card from each deck.
+	# Stake the deciding face-up card from each deck (appended LAST, so it is the final
+	# element of each *_cards array — the decider the reveal flips for the win).
 	var p_dec: Dictionary = pd.pop_front()
 	var c_dec: Dictionary = cd.pop_front()
 	p_dec["face_up"] = true
 	c_dec["face_up"] = true
 	next["player_pot"].append(p_dec)
 	next["cpu_pot"].append(c_dec)
+	p_cards.append(_card_summary(p_dec))
+	c_cards.append(_card_summary(c_dec))
 	next["war_depth"] = int(next.get("war_depth", 0)) + 1
 
 	var p_rank: int = int(p_dec["rank"])
@@ -301,6 +311,8 @@ static func _ack_war(next: Dictionary) -> Dictionary:
 		"depth": next["war_depth"],
 		"player": p_rank,
 		"cpu": c_rank,
+		"player_cards": p_cards,
+		"cpu_cards": c_cards,
 	})
 
 	if p_rank > c_rank:
@@ -371,6 +383,12 @@ static func _top_summary(pot: Array) -> Dictionary:
 		return {}
 	var top: Dictionary = pot[pot.size() - 1]
 	return {"rank": top.get("rank"), "suit": top.get("suit")}
+
+
+## A {rank,suit} summary of a single card — for presentation-only event payloads (e.g. the
+## war_decide staked cards the reveal UI flips). Mirrors _top_summary's shape.
+static func _card_summary(card: Dictionary) -> Dictionary:
+	return {"rank": card.get("rank"), "suit": card.get("suit")}
 
 
 # ---------------------------------------------------------------------------
