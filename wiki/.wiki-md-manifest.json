@@ -1,13 +1,13 @@
 {
   "ws:mqia7lmo-000o-afo5re": {
-    "version": 991,
+    "version": 1098,
     "files": {
       "game-war/architecture/index.md": "a8dbc2248926c3a757dcdfe5f1cac0b0d79f86e87c4f54a9c8114f3611dcae70",
       "game-war/features/index.md": "fafc6e3dbb95a9c0ef96faad1aee87aeba6a6ec18a807381b882ca72ea909dcc",
       "game-war/adrs/index.md": "f79d44e6a3a8d72e791f0d6126dd66cbd1e1df0ce9b1cbede35239098012e887",
-      "game-war/design/index.md": "b91a42b15d5628706255a4363e696fe439ffde82538fe07e93c5a73db6a7209c",
+      "game-war/design/index.md": "9bbf80ce326a45110c637976241be13cd21af35cdbc1d918f24b84429ef33ca3",
       "game-war/bugs.md": "94d5a0e7953327973b20033f3c620ebcb92bafb52627e37160d319f5c8e690c5",
-      "game-war/architecture/client/index.md": "235a34078223a785e2a68521f7e5c3cc959711d5784edcbcf0634f145f783c08",
+      "game-war/architecture/client/index.md": "7694f5059b0328fffe98dcde3f120fc57cbed939c96509be3a060f468a782efe",
       "game-war/architecture/validator/index.md": "b5d919c2149cad60c9c7ab5b4aef92fd7dec7fa989233597c751cdfa71fc28a8",
       "game-war/architecture/server-snapser-backend.md": "053aac47652c82a051831e73a3b501ba71c4f652b93a80ea82d8761daf65aa49",
       "game-war/architecture/client/rules-engine.md": "5dc46eccf1533b69eea8a20783335f1e29002635bc5e879f63fbd3a8f03cd474",
@@ -54,7 +54,10 @@
       "game-war/.archived/implementation-plan--mqiiw92t-019h-rni5e7.md": "bd91e03a5f5c3a7d3f732a73129bec44b96900f15c14cb5297f44b06ca3ed2b0",
       "game-war/.archived/testing-plan--mqiiw92t-019i-16id8d.md": "5748a45d653b2c41d4c046b1b82c3b47449fd177ddf5d48d07feafb418bee13f",
       "game-war/.archived/feature-spec--mqiiw92t-019j-holxv4.md": "d6d9492355f23b67dc22d9ae3fc35ce117dd36093a493383b004557f4e491067",
-      "game-war/architecture/client/round-director.md": "18aa000c605d44d84ac2e7ece681270ad027f2ad8e474fcc2e0e59ed59393f83"
+      "game-war/architecture/client/round-director.md": "18aa000c605d44d84ac2e7ece681270ad027f2ad8e474fcc2e0e59ed59393f83",
+      "game-war/design/mobile-first-ui-layout-best-practices.md": "c31f76895d3ecc1ae07c91d170a39a44f5a5f567007b0912974c7f67c282f9e4",
+      "game-war/architecture/client/game-control-api-wardebug.md": "ca3b77b81caad94cabcfe8aa653926990559268ddb10e8b9195e5b9c2f7dcbea",
+      "game-war/architecture/client/ui-control-api-warui.md": "993d1d0008bab8d3974bffe668f21d5059382c536104fa7eff42dc72662325ac"
     },
     "pages": {
       "toc:mqifdz0e-00bg-bu9ufr": "game-war/architecture/index.md",
@@ -109,7 +112,10 @@
       "implementation-plan:mqiiw92t-019h-rni5e7": "game-war/.archived/implementation-plan--mqiiw92t-019h-rni5e7.md",
       "testing-plan:mqiiw92t-019i-16id8d": "game-war/.archived/testing-plan--mqiiw92t-019i-16id8d.md",
       "feature-spec:mqiiw92t-019j-holxv4": "game-war/.archived/feature-spec--mqiiw92t-019j-holxv4.md",
-      "architecture:mqij0zl8-01dm-ekie5g": "game-war/architecture/client/round-director.md"
+      "architecture:mqij0zl8-01dm-ekie5g": "game-war/architecture/client/round-director.md",
+      "document:mqjwrq0j-00ix-gd72rb": "game-war/design/mobile-first-ui-layout-best-practices.md",
+      "architecture:mqjwv82c-00l8-rn1hje": "game-war/architecture/client/game-control-api-wardebug.md",
+      "architecture:mqjwvdio-00la-inyz89": "game-war/architecture/client/ui-control-api-warui.md"
     }
   }
 }

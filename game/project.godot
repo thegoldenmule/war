@@ -21,6 +21,7 @@ config/icon="res://icon.svg"
 WarDebug="*res://game/mcp_game_api.gd"
 GameState="*res://ui/game_state.gd"
 UiRouter="*res://ui/router/app_router.gd"
+_mcp_game_helper="*res://addons/godot_ai/runtime/game_helper.gd"
 
 [display]
 
@@ -32,7 +33,7 @@ window/handheld/orientation="portrait"
 
 [editor_plugins]
 
-enabled=PackedStringArray("res://addons/editor_tool_kit/plugin.cfg")
+enabled=PackedStringArray("res://addons/editor_tool_kit/plugin.cfg", "res://addons/godot_ai/plugin.cfg")
 
 [rendering]
 

@@ -29,6 +29,8 @@ Scaffolding status: as of this writing the boot script game/ui/boot.gd and the U
 - [Editor Tool Framework](architecture:mqifg298-00cf-orkb2o)
 - [Build & Distribution](architecture:mqifg5hx-00ch-km5tng)
 - [Round Director](architecture:mqij0zl8-01dm-ekie5g)
+- [Game Control API (WarDebug)](architecture:mqjwv82c-00l8-rn1hje)
+- [UI Control API (WarUi)](architecture:mqjwvdio-00la-inyz89)
 
 ## Dependencies
 _No dependencies._
