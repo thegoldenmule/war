@@ -28,6 +28,7 @@ Scaffolding status: as of this writing the boot script game/ui/boot.gd and the U
 - [UI & Meta Shell](architecture:mqiffwts-00cd-bm9ipe)
 - [Editor Tool Framework](architecture:mqifg298-00cf-orkb2o)
 - [Build & Distribution](architecture:mqifg5hx-00ch-km5tng)
+- [Round Director](architecture:mqij0zl8-01dm-ekie5g)
 
 ## Dependencies
 _No dependencies._

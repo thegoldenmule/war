@@ -1,13 +1,13 @@
 {
   "ws:mqia7lmo-000o-afo5re": {
-    "version": 522,
+    "version": 991,
     "files": {
       "game-war/architecture/index.md": "a8dbc2248926c3a757dcdfe5f1cac0b0d79f86e87c4f54a9c8114f3611dcae70",
       "game-war/features/index.md": "fafc6e3dbb95a9c0ef96faad1aee87aeba6a6ec18a807381b882ca72ea909dcc",
       "game-war/adrs/index.md": "f79d44e6a3a8d72e791f0d6126dd66cbd1e1df0ce9b1cbede35239098012e887",
       "game-war/design/index.md": "b91a42b15d5628706255a4363e696fe439ffde82538fe07e93c5a73db6a7209c",
       "game-war/bugs.md": "94d5a0e7953327973b20033f3c620ebcb92bafb52627e37160d319f5c8e690c5",
-      "game-war/architecture/client/index.md": "9e72f09ffd5f4901beb2bb6124520655fc433a53f0be61972c644b9456cfc002",
+      "game-war/architecture/client/index.md": "235a34078223a785e2a68521f7e5c3cc959711d5784edcbcf0634f145f783c08",
       "game-war/architecture/validator/index.md": "b5d919c2149cad60c9c7ab5b4aef92fd7dec7fa989233597c751cdfa71fc28a8",
       "game-war/architecture/server-snapser-backend.md": "053aac47652c82a051831e73a3b501ba71c4f652b93a80ea82d8761daf65aa49",
       "game-war/architecture/client/rules-engine.md": "5dc46eccf1533b69eea8a20783335f1e29002635bc5e879f63fbd3a8f03cd474",
@@ -49,7 +49,12 @@
       "game-war/features/daily-login-bonus/index.md": "45ac9ce04258f0a8c0cdeb6ab936897ba35a77d0cd056b84810d92a8556ce01a",
       "game-war/features/daily-login-bonus/implementation-plan-daily-login-bonus.md": "ab29ca7d71be5200be5d174d66eccd821bd16ea64cde8773d8b6611a6dd8ab62",
       "game-war/features/daily-login-bonus/testing-plan-daily-login-bonus.md": "4654d9aedd34d3841da79a2da551b2c5e6a7af76f35ab51fb10142cdc4e29f27",
-      "game-war/features/daily-login-bonus/spec-daily-login-bonus.md": "61ee68fbf617586764208835326d0a9a1f8c9c6481ec141c1299b0b74abbf4cc"
+      "game-war/features/daily-login-bonus/spec-daily-login-bonus.md": "61ee68fbf617586764208835326d0a9a1f8c9c6481ec141c1299b0b74abbf4cc",
+      "game-war/.archived/feature-brief--mqiiw92t-019g-or4sbl.md": "1b4f70e23f4859e679414ae5dd36d1c78cdd7a5d979b0944c60d714de0fb7953",
+      "game-war/.archived/implementation-plan--mqiiw92t-019h-rni5e7.md": "bd91e03a5f5c3a7d3f732a73129bec44b96900f15c14cb5297f44b06ca3ed2b0",
+      "game-war/.archived/testing-plan--mqiiw92t-019i-16id8d.md": "5748a45d653b2c41d4c046b1b82c3b47449fd177ddf5d48d07feafb418bee13f",
+      "game-war/.archived/feature-spec--mqiiw92t-019j-holxv4.md": "d6d9492355f23b67dc22d9ae3fc35ce117dd36093a493383b004557f4e491067",
+      "game-war/architecture/client/round-director.md": "18aa000c605d44d84ac2e7ece681270ad027f2ad8e474fcc2e0e59ed59393f83"
     },
     "pages": {
       "toc:mqifdz0e-00bg-bu9ufr": "game-war/architecture/index.md",
@@ -99,7 +104,12 @@
       "feature-brief:mqifjdky-00e1-r9b359": "game-war/features/daily-login-bonus/index.md",
       "implementation-plan:mqifjdky-00e2-xy1uqh": "game-war/features/daily-login-bonus/implementation-plan-daily-login-bonus.md",
       "testing-plan:mqifjdky-00e3-30vtb9": "game-war/features/daily-login-bonus/testing-plan-daily-login-bonus.md",
-      "feature-spec:mqifjdky-00e4-v8dzb3": "game-war/features/daily-login-bonus/spec-daily-login-bonus.md"
+      "feature-spec:mqifjdky-00e4-v8dzb3": "game-war/features/daily-login-bonus/spec-daily-login-bonus.md",
+      "feature-brief:mqiiw92t-019g-or4sbl": "game-war/.archived/feature-brief--mqiiw92t-019g-or4sbl.md",
+      "implementation-plan:mqiiw92t-019h-rni5e7": "game-war/.archived/implementation-plan--mqiiw92t-019h-rni5e7.md",
+      "testing-plan:mqiiw92t-019i-16id8d": "game-war/.archived/testing-plan--mqiiw92t-019i-16id8d.md",
+      "feature-spec:mqiiw92t-019j-holxv4": "game-war/.archived/feature-spec--mqiiw92t-019j-holxv4.md",
+      "architecture:mqij0zl8-01dm-ekie5g": "game-war/architecture/client/round-director.md"
     }
   }
 }
