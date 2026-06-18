@@ -397,12 +397,12 @@ func _is_terminal(phase: String) -> bool:
 
 # ── Beat (driven by beat — input gating + animations) ──────────────────────────
 
-func _on_beat(name: int, events: Array, locked: bool) -> void:
-	_beat_name = name
+func _on_beat(beat_id: int, events: Array, locked: bool) -> void:
+	_beat_name = beat_id
 	var B := RoundDirector.Beat
 
 	# Primary action button — enabled only at the two decision beats.
-	match name:
+	match beat_id:
 		B.FLIP_MOMENT:
 			_action_button.text = "FLIP CARD"
 			_action_button.disabled = false
@@ -416,32 +416,32 @@ func _on_beat(name: int, events: Array, locked: bool) -> void:
 	# USE SPECIAL — legal only at the flip moment with an owned, unstaged special.
 	var owned: Array = _state.get("specials", {}).get("player", [])
 	var has_pending := _state.get("pending_special", null) != null
-	_special_button.disabled = name != B.FLIP_MOMENT or has_pending or owned.is_empty()
+	_special_button.disabled = beat_id != B.FLIP_MOMENT or has_pending or owned.is_empty()
 
-	_war_overlay.visible = (name == B.WAR_BANNER or name == B.WAR_REVEALING)
-	_result_overlay.visible = (name == B.GAME_OVER)
+	_war_overlay.visible = (beat_id == B.WAR_BANNER or beat_id == B.WAR_REVEALING)
+	_result_overlay.visible = (beat_id == B.GAME_OVER)
 	_skip_catcher.visible = locked
 
 	# Accrue the cosmetic win pile EXACTLY ONCE per apply: only on the result/terminal
 	# beat, never on WAR_REVEALING (a war win's award rides in both WAR_REVEALING and
 	# ROUND_RESULT — accruing on both would double-count).
-	if name == B.ROUND_RESULT or name == B.GAME_OVER:
+	if beat_id == B.ROUND_RESULT or beat_id == B.GAME_OVER:
 		_won = PileModel.accrue(_won, events)
 		var pdeck: int = (_state.get("player_deck", []) as Array).size()
 		var cdeck: int = (_state.get("cpu_deck", []) as Array).size()
 		_won = PileModel.clamp_to(_won, pdeck, cdeck)
 		_paint_piles()
 
-	_play_beat_animation(name, events)
+	_play_beat_animation(beat_id, events)
 
 
 ## Animate the card movement for a beat. The static table is already correct (view_state
 ## fires before beat); flights are a cosmetic overlay torn down on the next re-render.
-func _play_beat_animation(name: int, events: Array) -> void:
+func _play_beat_animation(beat_id: int, events: Array) -> void:
 	if _fly == null:
 		return
 	var B := RoundDirector.Beat
-	match name:
+	match beat_id:
 		B.STAGING:
 			# Draw a card from each drawing deck to the current-card slot, both sides.
 			_fly.fly_back(_cpu_draw.get_global_rect(), _cpu_card.get_global_rect(), _fly_dur("stage"))
