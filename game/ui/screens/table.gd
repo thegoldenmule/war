@@ -7,49 +7,67 @@ extends Control
 ## RENDERING MODEL (one-way data flow, per the hard-wall contract):
 ##   tap → Director.request_* → WarMatch.submit_action → WarEngine.apply (pure) →
 ##   WarMatch emits state_changed → Director._on_state →
-##     view_state(state) → _render(state)            # WHAT is on the table
-##     beat(name, events, locked) → _on_beat(...)    # WHEN/whether to allow input
-## Crucially, button enable/label lives in _on_beat (driven by the beat + its
-## `locked` flag), NOT in _render — so the render of a state and the input gate for
-## a beat can never disagree mid-animation.
+##     view_state(state) → _on_view_state: clear the fly layer, then _render(state)
+##     beat(name, events, locked) → _on_beat: gate input, accrue the cosmetic win
+##       pile, and play the card-movement animation for the beat.
+## _render(state) is TOTAL + IDEMPOTENT and reads state (+ the clamped cosmetic win
+## accumulator) only; animations live entirely on the transient _fly layer, which is
+## force-cleared before every re-render — so a snap/reconcile re-renders cleanly.
+##
+## THREE PILES PER PLAYER (the visible model):
+##   DRAWING DECK (the deck you draw from)  |  CURRENT CARD (the staked/revealed pot
+##   card)  |  WIN DECK (cards you've won). The win deck is COSMETIC (see WarPileModel):
+##   the engine recycles won cards to the bottom of the draw deck, so the win pile is a
+##   clamped accumulator and draw + win always equals the deck (on-screen total = 52).
 ##
 ## STATE SHAPE consumed (the synchronized, hashed game state):
-##   { version, seed, phase, player_deck, cpu_deck, player_pot, cpu_pot,
-##     rng:{seq}, specials:{player:[],cpu:[]}, pending_special, war_depth }
-##   Card = { rank:2..14, suit:"clubs"|..., face_up:bool }; deck index 0 = top.
-##
-## Visual style is the shared WarPalette (the reference look): a gray table, steel-blue
-## card backs, off-white faces with black ink, an orange primary action, green/red
-## win-loss outlines, and white modal banners for WAR and game over.
+##   { version, seed, phase, player_deck, cpu_deck, player_pot, cpu_pot, rng:{seq},
+##     specials:{player:[],cpu:[]}, pending_special, war_depth }.
 
-## The presentation-tier sequencer. Preloaded (not the class_name global) so this
-## screen loads even before an editor scan has registered WarRoundDirector.
 const RoundDirector := preload("res://ui/round_director.gd")
+const PileModel := preload("res://ui/pile_model.gd")
+const CardVisual := preload("res://ui/card_visual.gd")
+const FlyLayer := preload("res://ui/fly_layer.gd")
 
-# ── Sequencer + last snapshot ─────────────────────────────────────────────────
+## Flight durations are this fraction of the owning beat's tempo, so a card lands
+## before the Director's auto-action fires the next state change.
+const FLY_FRACTION := 0.82
 
-## The live Round Director instance. Null only before _ready.
+# ── Sequencer + view state ─────────────────────────────────────────────────────
 var _director: Node = null
-## The most recently rendered state dictionary (empty until the first deal).
 var _state: Dictionary = {}
-## The most recent beat + its input-lock flag (set by _on_beat, read by taps).
 var _beat_name: int = RoundDirector.Beat.BOOT
+## Cosmetic win-pile accumulator (NOT hashed state). Reset on a new match; clamped
+## to the live deck sizes on every render (the recycle write-back).
+var _won: Dictionary = {"player": 0, "cpu": 0}
+var _prev_phase: String = ""
 
 # ── Node refs (built in _ready) ───────────────────────────────────────────────
 var _phase_label: Label = null
-var _cpu_count: Label = null
-var _player_count: Label = null
+# Per player: draw pile, current card, win pile (Panel) + their content Labels +
+# the draw/win count captions.
+var _cpu_draw: Panel = null
+var _cpu_draw_lbl: Label = null
+var _cpu_draw_cap: Label = null
 var _cpu_card: Panel = null
 var _cpu_card_label: Label = null
+var _cpu_win: Panel = null
+var _cpu_win_lbl: Label = null
+var _cpu_win_cap: Label = null
+var _player_draw: Panel = null
+var _player_draw_lbl: Label = null
+var _player_draw_cap: Label = null
 var _player_card: Panel = null
 var _player_card_label: Label = null
+var _player_win: Panel = null
+var _player_win_lbl: Label = null
+var _player_win_cap: Label = null
 var _special_button: Button = null
 var _action_button: Button = null
+var _fly: Control = null
 var _war_overlay: Control = null
 var _result_overlay: Control = null
 var _result_label: Label = null
-## Full-screen transparent tap-catcher: routes a tap to request_skip during
-## transient/locked beats. Hidden (pass-through) at decision beats and game over.
 var _skip_catcher: Button = null
 
 
@@ -59,12 +77,8 @@ func _ready() -> void:
 	_start_director()
 
 
-# ── Sequencer lifecycle ───────────────────────────────────────────────────────
-
 func _start_director() -> void:
 	_director = RoundDirector.new()
-	# Connect BEFORE add_child: the Director deals in its own _ready (fired by
-	# add_child) and emits the first view_state/beat synchronously.
 	_director.view_state.connect(_on_view_state)
 	_director.beat.connect(_on_beat)
 	add_child(_director)
@@ -102,14 +116,13 @@ func _build_ui() -> void:
 	topbar.add_child(_phase_label)
 	col.add_child(topbar)
 
-	# ── CPU pile ───────────────────────────────────────────────────────────────
-	_cpu_count = _make_pile_label("CPU")
-	col.add_child(_cpu_count)
-	_cpu_card = _make_card_slot()
-	_cpu_card_label = _cpu_card.get_child(0)
-	col.add_child(_center(_cpu_card))
-
-	col.add_child(_spacer(4))
+	# ── CPU row: draw | current | win ──────────────────────────────────────────
+	var cpu_row := _three_pile_row()
+	_cpu_draw = cpu_row["draw"]; _cpu_draw_lbl = cpu_row["draw_lbl"]; _cpu_draw_cap = cpu_row["draw_cap"]
+	_cpu_card = cpu_row["card"]; _cpu_card_label = cpu_row["card_lbl"]
+	_cpu_win = cpu_row["win"]; _cpu_win_lbl = cpu_row["win_lbl"]; _cpu_win_cap = cpu_row["win_cap"]
+	col.add_child(_label("CPU", 20, WarPalette.INK))
+	col.add_child(cpu_row["row"])
 
 	var vs := Label.new()
 	vs.text = "— vs —"
@@ -117,14 +130,13 @@ func _build_ui() -> void:
 	vs.add_theme_color_override("font_color", WarPalette.INK_DIM)
 	col.add_child(vs)
 
-	col.add_child(_spacer(4))
-
-	# ── Player pile ─────────────────────────────────────────────────────────────
-	_player_card = _make_card_slot()
-	_player_card_label = _player_card.get_child(0)
-	col.add_child(_center(_player_card))
-	_player_count = _make_pile_label("YOU")
-	col.add_child(_player_count)
+	# ── Player row: draw | current | win ───────────────────────────────────────
+	var you_row := _three_pile_row()
+	_player_draw = you_row["draw"]; _player_draw_lbl = you_row["draw_lbl"]; _player_draw_cap = you_row["draw_cap"]
+	_player_card = you_row["card"]; _player_card_label = you_row["card_lbl"]
+	_player_win = you_row["win"]; _player_win_lbl = you_row["win_lbl"]; _player_win_cap = you_row["win_cap"]
+	col.add_child(you_row["row"])
+	col.add_child(_label("YOU", 20, WarPalette.INK))
 
 	col.add_child(_spacer(8))
 
@@ -141,15 +153,15 @@ func _build_ui() -> void:
 	actions.add_child(_action_button)
 	col.add_child(actions)
 
-	# ── Overlays (built last so they layer on top of the table) ────────────────
+	# ── Fly layer (above the table, below the overlays + skip-catcher) ─────────
+	_fly = FlyLayer.new()
+	add_child(_fly)
+
+	# ── Overlays + tap-catcher (top-most) ──────────────────────────────────────
 	_war_overlay = _build_war_overlay()
 	add_child(_war_overlay)
 	_result_overlay = _build_result_overlay()
 	add_child(_result_overlay)
-
-	# ── Tap-catcher (TOP-MOST): visible only on locked beats, so a tap anywhere
-	# fast-forwards the armed auto-action. Hidden at decision beats / game over so
-	# the buttons beneath (and the result overlay) receive taps normally.
 	_skip_catcher = Button.new()
 	_skip_catcher.flat = true
 	_skip_catcher.focus_mode = Control.FOCUS_NONE
@@ -160,36 +172,49 @@ func _build_ui() -> void:
 	add_child(_skip_catcher)
 
 
-func _make_pile_label(prefix: String) -> Label:
-	var l := Label.new()
-	l.add_theme_color_override("font_color", WarPalette.INK)
-	l.add_theme_font_size_override("font_size", 20)
-	l.set_meta("prefix", prefix)
-	l.text = "%s: --" % prefix
-	return l
-
-
-## A flip card slot — a bordered panel with a centered label. _render_card paints it
-## as a blue back (face-down) or a light face (face-up) and may add a win/loss outline.
-func _make_card_slot() -> Panel:
-	var p := Panel.new()
-	p.custom_minimum_size = Vector2(140, 196)
-	p.add_theme_stylebox_override("panel", WarPalette.box(WarPalette.PANEL, WarPalette.INK_DIM))
-	var l := Label.new()
-	l.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	l.add_theme_font_size_override("font_size", 40)
-	l.add_theme_color_override("font_color", WarPalette.INK)
-	p.add_child(l)
-	return p
-
-
-func _center(c: Control) -> Control:
+## Build one player's row of three cells (draw | current | win). Returns the row
+## HBox plus refs to each slot Panel, its content Label, and the draw/win captions.
+func _three_pile_row() -> Dictionary:
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.add_child(c)
-	return row
+	row.add_theme_constant_override("separation", 18)
+	var draw := _pile_cell("DRAW")
+	var card := _pile_cell("")
+	var win := _pile_cell("WIN")
+	row.add_child(draw["cell"])
+	row.add_child(card["cell"])
+	row.add_child(win["cell"])
+	return {
+		"row": row,
+		"draw": draw["slot"], "draw_lbl": draw["lbl"], "draw_cap": draw["cap"],
+		"card": card["slot"], "card_lbl": card["lbl"],
+		"win": win["slot"], "win_lbl": win["lbl"], "win_cap": win["cap"],
+	}
+
+
+## One cell: a card slot above a caption label (empty caption for the current-card
+## cell keeps all three columns vertically aligned).
+func _pile_cell(caption: String) -> Dictionary:
+	var cell := VBoxContainer.new()
+	cell.alignment = BoxContainer.ALIGNMENT_CENTER
+	cell.add_theme_constant_override("separation", 6)
+	var slot := CardVisual.make_slot()
+	cell.add_child(slot)
+	var cap := Label.new()
+	cap.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	cap.add_theme_color_override("font_color", WarPalette.INK)
+	cap.add_theme_font_size_override("font_size", 15)
+	cap.text = caption
+	cell.add_child(cap)
+	return {"cell": cell, "slot": slot, "lbl": slot.get_child(0) as Label, "cap": cap}
+
+
+func _label(text: String, size: int, color: Color) -> Label:
+	var l := Label.new()
+	l.text = text
+	l.add_theme_color_override("font_color", color)
+	l.add_theme_font_size_override("font_size", size)
+	return l
 
 
 func _spacer(h: int) -> Control:
@@ -200,14 +225,10 @@ func _spacer(h: int) -> Control:
 
 # ── Overlays ────────────────────────────────────────────────────────────────--
 
-## The WAR overlay — a dim scrim with a white banner carrying the war cry, the orange
-## accent underlining it. Shown during the WAR_BANNER / WAR_REVEALING transient beats.
-## (The detailed stake animation + war_depth pips belong to the I-Declare-War feature,
-## which plugs into these beats.)
 func _build_war_overlay() -> Control:
 	var overlay := Control.new()
 	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE  # the skip-catcher handles taps
+	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	overlay.visible = false
 	var dim := ColorRect.new()
 	dim.color = WarPalette.SCRIM
@@ -230,8 +251,6 @@ func _build_war_overlay() -> Control:
 	return overlay
 
 
-## Game-over overlay (the GAME_OVER beat): a white banner with result text (green
-## VICTORY / red DEFEAT) plus PLAY AGAIN (deal a fresh match) and CONTINUE TO LOBBY.
 func _build_result_overlay() -> Control:
 	var overlay := Control.new()
 	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -267,81 +286,88 @@ func _build_result_overlay() -> Control:
 # ── Render (driven by view_state — WHAT is on the table) ───────────────────────
 
 func _on_view_state(state: Dictionary) -> void:
+	# Tear down any in-flight animation BEFORE re-rendering: a fresh authoritative
+	# state (normal advance or reconcile snap) must never leave a stranded card.
+	if _fly != null:
+		_fly.clear()
 	_render(state)
 
 
-## Render the entire table from a state dictionary. Idempotent and total: a {} state
-## renders an empty/idle table. Reads state ONLY — never touches button enable/label
-## or overlay visibility (those follow the beat in _on_beat).
+## Render the entire table from a state dictionary. Idempotent and total: reads
+## state + the clamped cosmetic win accumulator only; never touches the fly layer.
 func _render(state: Dictionary) -> void:
 	_state = state
 	var phase := String(state.get("phase", "—"))
 
-	var pdeck: Array = state.get("player_deck", [])
-	var cdeck: Array = state.get("cpu_deck", [])
-	_cpu_count.text = "%s: %d cards" % [_cpu_count.get_meta("prefix"), cdeck.size()]
-	_player_count.text = "%s: %d cards" % [_player_count.get_meta("prefix"), pdeck.size()]
+	# Reset the cosmetic win piles when a NEW match starts: the first render, or a
+	# transition out of a terminal phase (PLAY AGAIN). The Director drops the
+	# new_game event from its resting-beat payload, so detect the restart by phase.
+	if (_prev_phase == "" or _is_terminal(_prev_phase)) and not _is_terminal(phase):
+		_won = PileModel.empty()
+
+	var pdeck: int = (state.get("player_deck", []) as Array).size()
+	var cdeck: int = (state.get("cpu_deck", []) as Array).size()
+	# Recycle write-back: pin the accumulator to what is actually held.
+	_won = PileModel.clamp_to(_won, pdeck, cdeck)
+	_paint_piles()
+
+	# Current cards: the staked pot card (face-down until flipped). Empty between rounds.
+	_render_current(_cpu_card, _cpu_card_label, state.get("cpu_pot", []))
+	_render_current(_player_card, _player_card_label, state.get("player_pot", []))
+	_apply_win_loss(state.get("cpu_pot", []), state.get("player_pot", []))
 
 	_phase_label.text = _phase_caption(phase, int(state.get("war_depth", 0)))
 
-	# Flip slots: the staked top cards. Face-up reveals rank+suit; face-down shows the
-	# blue back. Empty shows a dash.
-	var cpu_card: Variant = _top_revealed(cdeck, state.get("cpu_pot", []))
-	var player_card: Variant = _top_revealed(pdeck, state.get("player_pot", []))
-	_render_card(_cpu_card, _cpu_card_label, cpu_card)
-	_render_card(_player_card, _player_card_label, player_card)
-	# When both are revealed, outline the higher rank green and the lower red. A tie
-	# leaves both neutral (it goes to WAR).
-	_apply_win_loss(cpu_card, player_card)
-
-	# Result text follows the terminal phase; the overlay's VISIBILITY is the beat's job.
 	if phase == "player_win" or phase == "cpu_win":
 		_result_label.text = "VICTORY" if phase == "player_win" else "DEFEAT"
 		_result_label.add_theme_color_override(
 			"font_color", WarPalette.WIN if phase == "player_win" else WarPalette.LOSE)
 
-
-## The card to display in a flip slot: prefer the staked face-up pot card, else the top
-## of the deck. Returns null when empty.
-func _top_revealed(deck: Array, pot: Array) -> Variant:
-	if pot is Array and not pot.is_empty():
-		return pot.back()
-	if deck is Array and not deck.is_empty():
-		return deck.front()
-	return null
+	_prev_phase = phase
 
 
-## Paint a card slot from a Card dict (or null). Null / face-down shows the blue back;
-## face-up shows rank + suit glyph on a light face (red suits tinted).
-func _render_card(slot: Panel, label: Label, card: Variant) -> void:
-	if card == null:
-		label.text = "—"
-		label.add_theme_color_override("font_color", WarPalette.INK_DIM)
-		slot.add_theme_stylebox_override("panel", WarPalette.box(WarPalette.PANEL, WarPalette.INK_DIM))
+## Paint the four pile slots (draw + win for each player) from the cosmetic counts.
+func _paint_piles() -> void:
+	var pdeck: int = (_state.get("player_deck", []) as Array).size()
+	var cdeck: int = (_state.get("cpu_deck", []) as Array).size()
+	var piles := PileModel.counts(_won, pdeck, cdeck)
+	_paint_pile(_cpu_draw, _cpu_draw_lbl, _cpu_draw_cap, "DRAW", int(piles["cpu"]["draw"]))
+	_paint_pile(_cpu_win, _cpu_win_lbl, _cpu_win_cap, "WIN", int(piles["cpu"]["win"]))
+	_paint_pile(_player_draw, _player_draw_lbl, _player_draw_cap, "DRAW", int(piles["player"]["draw"]))
+	_paint_pile(_player_win, _player_win_lbl, _player_win_cap, "WIN", int(piles["player"]["win"]))
+
+
+## A pile slot: a face-down back when it holds cards, a dim placeholder when empty;
+## the caption shows the role + count.
+func _paint_pile(slot: Panel, label: Label, cap: Label, role: String, count: int) -> void:
+	if count > 0:
+		CardVisual.paint_back(slot, label)
+	else:
+		CardVisual.paint_empty(slot, label)
+	cap.text = "%s %d" % [role, count]
+
+
+## Paint a current-card slot from a pot: the staked top card (face-up if revealed),
+## or empty when no card is staged.
+func _render_current(slot: Panel, label: Label, pot: Variant) -> void:
+	if not (pot is Array) or (pot as Array).is_empty():
+		CardVisual.paint_empty(slot, label)
 		return
-	var c: Dictionary = card
-	if not bool(c.get("face_up", false)):
-		# Steel-blue back for a face-down card (the flip moment lives here).
-		label.text = "✦"
-		label.add_theme_color_override("font_color", WarPalette.ON_DARK)
-		slot.add_theme_stylebox_override("panel", WarPalette.box(WarPalette.CARD_BACK, WarPalette.CARD_BACK_BORDER))
-		return
-	var rank := int(c.get("rank", 0))
-	var suit := String(c.get("suit", ""))
-	var glyph := String(WarPalette.SUIT_GLYPH.get(suit, "?"))
-	var rank_txt := String(WarPalette.RANK_LABEL.get(rank, str(rank)))
-	label.text = "%s\n%s" % [rank_txt, glyph]
-	var red := (suit == "hearts" or suit == "diamonds")
-	label.add_theme_color_override("font_color", WarPalette.RED_SUIT if red else WarPalette.INK)
-	slot.add_theme_stylebox_override("panel", WarPalette.box(WarPalette.CARD_FACE, WarPalette.INK))
+	var card: Dictionary = (pot as Array).back()
+	if bool(card.get("face_up", false)):
+		CardVisual.paint_face(slot, label, card)
+	else:
+		CardVisual.paint_back(slot, label)
 
 
-## When both staked cards are face-up, outline the winner green and the loser red.
-func _apply_win_loss(cpu_card: Variant, player_card: Variant) -> void:
-	if cpu_card == null or player_card == null:
+## When both current cards are face-up, outline the higher rank green and lower red.
+func _apply_win_loss(cpu_pot: Variant, player_pot: Variant) -> void:
+	if not (cpu_pot is Array) or not (player_pot is Array):
 		return
-	var cc: Dictionary = cpu_card
-	var pc: Dictionary = player_card
+	if (cpu_pot as Array).is_empty() or (player_pot as Array).is_empty():
+		return
+	var cc: Dictionary = (cpu_pot as Array).back()
+	var pc: Dictionary = (player_pot as Array).back()
 	if not bool(cc.get("face_up", false)) or not bool(pc.get("face_up", false)):
 		return
 	var cr := int(cc.get("rank", 0))
@@ -354,7 +380,6 @@ func _apply_win_loss(cpu_card: Variant, player_card: Variant) -> void:
 	_player_card.add_theme_stylebox_override("panel", WarPalette.box(WarPalette.CARD_FACE, player_color, 4))
 
 
-## Human-readable phase caption for the banner.
 func _phase_caption(phase: String, war_depth: int) -> String:
 	match phase:
 		"dealt": return "DEALING…"
@@ -366,12 +391,13 @@ func _phase_caption(phase: String, war_depth: int) -> String:
 		_: return phase.to_upper()
 
 
-# ── Beat (driven by beat — WHEN/whether input is allowed) ──────────────────────
+func _is_terminal(phase: String) -> bool:
+	return phase == "player_win" or phase == "cpu_win"
 
-## React to a beat change: set button enable/label, overlay visibility, and whether
-## the tap-catcher is active. This is the SOLE owner of input gating, so it can never
-## disagree with _render mid-animation.
-func _on_beat(name: int, _events: Array, locked: bool) -> void:
+
+# ── Beat (driven by beat — input gating + animations) ──────────────────────────
+
+func _on_beat(name: int, events: Array, locked: bool) -> void:
 	_beat_name = name
 	var B := RoundDirector.Beat
 
@@ -392,10 +418,60 @@ func _on_beat(name: int, _events: Array, locked: bool) -> void:
 	var has_pending := _state.get("pending_special", null) != null
 	_special_button.disabled = name != B.FLIP_MOMENT or has_pending or owned.is_empty()
 
-	# Overlays + tap-catcher follow the beat.
 	_war_overlay.visible = (name == B.WAR_BANNER or name == B.WAR_REVEALING)
 	_result_overlay.visible = (name == B.GAME_OVER)
 	_skip_catcher.visible = locked
+
+	# Accrue the cosmetic win pile EXACTLY ONCE per apply: only on the result/terminal
+	# beat, never on WAR_REVEALING (a war win's award rides in both WAR_REVEALING and
+	# ROUND_RESULT — accruing on both would double-count).
+	if name == B.ROUND_RESULT or name == B.GAME_OVER:
+		_won = PileModel.accrue(_won, events)
+		var pdeck: int = (_state.get("player_deck", []) as Array).size()
+		var cdeck: int = (_state.get("cpu_deck", []) as Array).size()
+		_won = PileModel.clamp_to(_won, pdeck, cdeck)
+		_paint_piles()
+
+	_play_beat_animation(name, events)
+
+
+## Animate the card movement for a beat. The static table is already correct (view_state
+## fires before beat); flights are a cosmetic overlay torn down on the next re-render.
+func _play_beat_animation(name: int, events: Array) -> void:
+	if _fly == null:
+		return
+	var B := RoundDirector.Beat
+	match name:
+		B.STAGING:
+			# Draw a card from each drawing deck to the current-card slot, both sides.
+			_fly.fly_back(_cpu_draw.get_global_rect(), _cpu_card.get_global_rect(), _fly_dur("stage"))
+			_fly.fly_back(_player_draw.get_global_rect(), _player_card.get_global_rect(), _fly_dur("stage"))
+		B.WAR_REVEALING:
+			# War stake: more cards move from the draw decks into the current area.
+			_fly.fly_back(_cpu_draw.get_global_rect(), _cpu_card.get_global_rect(), _fly_dur("war_stake"))
+			_fly.fly_back(_player_draw.get_global_rect(), _player_card.get_global_rect(), _fly_dur("war_stake"))
+		B.ROUND_RESULT:
+			# Win-sweep: BOTH current cards move into the winner's win deck.
+			var winner := _award_winner(events)
+			if winner != "":
+				var dest: Panel = _player_win if winner == "player" else _cpu_win
+				var dur := _fly_dur("result")
+				_fly.fly_back(_cpu_card.get_global_rect(), dest.get_global_rect(), dur)
+				_fly.fly_back(_player_card.get_global_rect(), dest.get_global_rect(), dur, 0.05)
+
+
+## The winner named by an award event in this apply (or "" if none).
+func _award_winner(events: Array) -> String:
+	for ev in events:
+		if String((ev as Dictionary).get("type", "")) == "award":
+			return String((ev as Dictionary).get("winner", ""))
+	return ""
+
+
+## Flight duration: a fraction of the owning beat's tempo (kept coupled to the
+## Director's TEMPO/SPEED so a tempo change keeps flights finishing in time).
+func _fly_dur(key: String) -> float:
+	return float(RoundDirector.TEMPO[key]) * float(RoundDirector.SPEED) * FLY_FRACTION
 
 
 # ── Input → Director intents ───────────────────────────────────────────────────
@@ -409,9 +485,6 @@ func _on_action_pressed() -> void:
 
 
 func _on_special_pressed() -> void:
-	# THE FLIP MOMENT: stake the first owned special before revealing. A full UI opens
-	# a picker; the basic loop plays the first owned id. (specials.player is empty in
-	# the basic loop, so this button is disabled — the Special Cards feature fills it.)
 	var owned: Array = _state.get("specials", {}).get("player", [])
 	if owned.is_empty():
 		return
@@ -419,8 +492,6 @@ func _on_special_pressed() -> void:
 
 
 func _on_skip_pressed() -> void:
-	# Tap anywhere during a transient/locked beat fast-forwards the armed auto-action.
-	# request_skip is itself a no-op at decision beats, so this is always safe.
 	_director.request_skip()
 
 
