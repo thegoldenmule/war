@@ -41,9 +41,6 @@ var _beat_name: int = RoundDirector.Beat.BOOT
 ## to the live deck sizes on every render (the recycle write-back).
 var _won: Dictionary = {"player": 0, "cpu": 0}
 var _prev_phase: String = ""
-## Edge-tracker so a win-pile recycle (win deck flips to draw deck) animates ONCE,
-## not on every subsequent render while still saturated.
-var _recycled: Dictionary = {"player": false, "cpu": false}
 
 # ── Node refs (built in _ready) ───────────────────────────────────────────────
 var _phase_label: Label = null
@@ -307,7 +304,6 @@ func _render(state: Dictionary) -> void:
 	# new_game event from its resting-beat payload, so detect the restart by phase.
 	if (_prev_phase == "" or _is_terminal(_prev_phase)) and not _is_terminal(phase):
 		_won = PileModel.empty()
-		_recycled = {"player": false, "cpu": false}
 
 	var pdeck: int = (state.get("player_deck", []) as Array).size()
 	var cdeck: int = (state.get("cpu_deck", []) as Array).size()
@@ -418,7 +414,7 @@ func _on_beat(beat_id: int, events: Array, locked: bool) -> void:
 			_action_button.disabled = locked   # enabled only on the special-window path
 		B.WAR_PROMPT:
 			_action_button.text = "DECLARE WAR"
-			_action_button.disabled = false
+			_action_button.disabled = locked   # a runaway (deep) war auto-acks: button off
 		_:
 			_action_button.text = "—"
 			_action_button.disabled = true
@@ -435,8 +431,9 @@ func _on_beat(beat_id: int, events: Array, locked: bool) -> void:
 
 	# Accrue the cosmetic win pile EXACTLY ONCE per apply: only on the result/terminal
 	# beat, never on WAR_REVEALING (a war win's award rides in both WAR_REVEALING and
-	# ROUND_RESULT — accruing on both would double-count). Edge-detect a recycle (win
-	# pile saturated the deck) BEFORE the recycle write-back, and animate it once.
+	# ROUND_RESULT — accruing on both would double-count). Detect a recycle (the win
+	# pile just SATURATED the deck) BEFORE the recycle write-back, and sweep it once: the
+	# write-back resets the accumulator to 0, so the next apply is no longer saturated.
 	if beat_id == B.ROUND_RESULT or beat_id == B.GAME_OVER:
 		var pdeck: int = (_state.get("player_deck", []) as Array).size()
 		var cdeck: int = (_state.get("cpu_deck", []) as Array).size()
@@ -444,11 +441,10 @@ func _on_beat(beat_id: int, events: Array, locked: bool) -> void:
 		var sides := PileModel.recycled_sides(_won, pdeck, cdeck)
 		_won = PileModel.recycle(_won, pdeck, cdeck)
 		_paint_piles()
-		if bool(sides["player"]) and not bool(_recycled["player"]):
+		if bool(sides["player"]):
 			_queue_recycle_anim("player")
-		if bool(sides["cpu"]) and not bool(_recycled["cpu"]):
+		if bool(sides["cpu"]):
 			_queue_recycle_anim("cpu")
-		_recycled = sides
 
 	_play_beat_animation(beat_id, events)
 

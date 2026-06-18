@@ -67,11 +67,13 @@ func _run() -> String:
 		return "a side never held cards — the deal did not render a non-empty 'dealt' state"
 
 	# Input-lock flag is correct for every beat that appeared.
+	# (WAR_PROMPT's lock is conditional — false when awaited, true when a deep war
+	# auto-acks — so it is asserted in _check_deep_war_autoack, not here.)
 	var locked_expected := {
 		B.DEAL_PROMPT: false, B.DRAWING: true, B.FLIP_MOMENT: true,
 		B.REVEALING: true, B.ROUND_RESULT: true,
 		B.WAR_BANNER: true, B.WAR_REVEALING: true,
-		B.WAR_PROMPT: false, B.GAME_OVER: false,
+		B.GAME_OVER: false,
 	}
 	for beat_name in locked_expected:
 		if rec["locks"].has(beat_name) and rec["locks"][beat_name] != locked_expected[beat_name]:
@@ -408,12 +410,14 @@ func _check_deep_war_autoack() -> String:
 	var B = Director.Beat
 	var d = Director.new()
 	d.boot_seed = FIXED_SEED
-	d.beat.connect(func(_n: int, _e: Array, _l: bool) -> void: pass)
+	var last_locked := [false]
+	d.beat.connect(func(_n: int, _e: Array, l: bool) -> void: last_locked[0] = l)
 	get_root().add_child(d)
 	await process_frame
 	if d._match == null:
 		_retire(d)
 		return "Director did not initialize its WarMatch"
+	# Shallow: awaits the player — no auto-action armed, emitted UNLOCKED (interactive).
 	d._arm(null)
 	d._enter_resting(B.WAR_PROMPT, WAR_SHALLOW_DEPTH)
 	if d._beat != B.WAR_PROMPT:
@@ -422,10 +426,17 @@ func _check_deep_war_autoack() -> String:
 	if d._pending != null:
 		_retire(d)
 		return "a shallow WAR_PROMPT armed an auto-ack (should await the player)"
+	if last_locked[0]:
+		_retire(d)
+		return "a shallow WAR_PROMPT was emitted LOCKED (an awaited prompt must be unlocked)"
+	# Deep: arms the auto-ack timer AND is emitted LOCKED (an auto beat, not a prompt).
 	d._enter_resting(B.WAR_PROMPT, WAR_DEEP_DEPTH)
 	if d._pending == null:
 		_retire(d)
 		return "a deep WAR_PROMPT (depth %d) did not arm the auto-ack" % WAR_DEEP_DEPTH
+	if not last_locked[0]:
+		_retire(d)
+		return "a deep (auto-acking) WAR_PROMPT was emitted UNLOCKED (should be a locked auto beat)"
 	d._arm(null)
 	_retire(d)
 	return ""

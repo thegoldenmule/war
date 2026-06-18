@@ -129,10 +129,33 @@ func _run() -> String:
 		_retire(t)
 		return "primary button is enabled on the locked DRAWING beat"
 
+	# Win->draw recycle through the real _on_beat: a SATURATING award flips the win pile
+	# to the draw pile (won -> 0, the caption reads DRAW <full> / WIN 0) and queues a
+	# recycle sweep. Seed the cosmetic accumulator one short of the deck, then award one.
+	t._fly.clear()
+	var rec_pdeck := (t._director._match.get_state().get("player_deck", []) as Array).size()
+	if rec_pdeck < 1:
+		_retire(t)
+		return "no player draw deck to exercise the recycle"
+	t._won = {"player": maxi(0, rec_pdeck - 1), "cpu": 0}
+	t._on_beat(B.ROUND_RESULT, [{"type": "award", "winner": "player", "cards": 1}], false)
+	if int(t._won["player"]) != 0:
+		_retire(t)
+		return "a saturating award did not recycle the win pile (won.player=%d, expected 0)" % t._won["player"]
+	if String(t._player_win_cap.text) != "WIN 0":
+		_retire(t)
+		return "after a recycle the win caption is '%s', expected 'WIN 0' (win pile flipped to draw)" % t._player_win_cap.text
+	if String(t._player_draw_cap.text) != "DRAW %d" % rec_pdeck:
+		_retire(t)
+		return "after a recycle the draw caption is '%s', expected 'DRAW %d'" % [t._player_draw_cap.text, rec_pdeck]
+	if t._fly.get_child_count() == 0:
+		_retire(t)
+		return "the recycle did not queue a win->draw sweep flight"
+
 	# Fly-layer: TWO simultaneous flights (the draw-in / win-sweep case) each get their
 	# OWN tween — reusing one tween fails with "Can't append to a Tween that has started".
-	# Clear first (the DRAWING beat already queued the draw-in flights), then use explicit
-	# rects so flights are created regardless of headless layout timing.
+	# Clear first (prior beats queued flights), then use explicit rects so flights are
+	# created regardless of headless layout timing.
 	t._fly.clear()
 	t._fly.fly_back(Rect2(Vector2(10, 10), Vector2(128, 180)), Rect2(Vector2(300, 300), Vector2(128, 180)), 0.5)
 	t._fly.fly_back(Rect2(Vector2(20, 20), Vector2(128, 180)), Rect2(Vector2(400, 400), Vector2(128, 180)), 0.5, 0.05)

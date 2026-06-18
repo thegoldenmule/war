@@ -258,6 +258,10 @@ func _enter_resting(resting: int, depth: int) -> void:
 	var locked := not _is_decision_beat(resting)
 	if resting == Beat.FLIP_MOMENT:
 		locked = not _has_preflip_special()
+	elif resting == Beat.WAR_PROMPT and depth > WAR_AUTO_DEPTH and can_auto_ack():
+		# A runaway war auto-advances — present it as an auto beat (button disabled,
+		# skip-catcher shown), not an awaited DECLARE WAR prompt.
+		locked = true
 	_emit(resting, [], locked)
 	match resting:
 		Beat.FLIP_MOMENT:
