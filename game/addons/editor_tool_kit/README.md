@@ -6,7 +6,7 @@ are inherited. The kit is mostly a **framework**: enabling it keeps the
 `class_name` globals registered for the tools that subclass them.
 
 It is **vendored** into this project but **sourced** from a standalone repo
-([github.com/thegoldenmule/godot-editor-tk](https://github.com/thegoldenmule/godot-editor-tk)) —
+([github.com/thegoldenmule/godot-addons](https://github.com/thegoldenmule/godot-addons)) —
 so its own `plugin.gd` mounts one small thing of its own: an **"Editor Tool Kit"**
 bottom-panel tab that checks that repo for a newer version and self-updates in
 place (see [Self-update](#self-update)), mirroring how the godot-ai plugin
@@ -114,7 +114,7 @@ Godot's `Control.theme` cascade:
 ## Self-update
 
 The kit is committed into the project (a fresh clone works offline) but is
-*sourced* from `github.com/thegoldenmule/godot-editor-tk`. The **"Editor Tool
+*sourced* from `github.com/thegoldenmule/godot-addons`. The **"Editor Tool
 Kit"** bottom-panel tab checks that repo and pulls a newer copy in place:
 
 - **`update_service.gd`** (`ToolService`) — owns the version check + download.

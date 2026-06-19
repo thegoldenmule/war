@@ -5,7 +5,7 @@ extends "res://addons/editor_tool_kit/editor_tool_plugin.gd"
 ## EditorToolPlugin, ToolService, ContentStore, EditorToolUi, BridgeServer (see
 ## each file + README.md). It is committed into the consuming project (so a fresh
 ## clone works offline) but is *sourced* from a standalone repo
-## (github.com/thegoldenmule/godot-editor-tk); this plugin mounts a small
+## (github.com/thegoldenmule/godot-addons); this plugin mounts a small
 ## "Editor Tool Kit" panel that checks that repo for a newer version and pulls it
 ## in place, mirroring how the godot-ai plugin self-updates.
 ##

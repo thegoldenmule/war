@@ -21,13 +21,13 @@ extends "res://addons/editor_tool_kit/tool_service.gd"
 
 # ── Source repo ───────────────────────────────────────────────────────────────
 const REPO_OWNER := "thegoldenmule"
-const REPO_NAME := "godot-editor-tk"
+const REPO_NAME := "godot-addons"
 const BRANCH := "main"
-const REPO_PAGE := "https://github.com/thegoldenmule/godot-editor-tk"
+const REPO_PAGE := "https://github.com/thegoldenmule/godot-addons"
 ## Raw plugin.cfg on the tracked branch — the version source of truth.
-const REMOTE_CFG_URL := "https://raw.githubusercontent.com/thegoldenmule/godot-editor-tk/main/addons/editor_tool_kit/plugin.cfg"
+const REMOTE_CFG_URL := "https://raw.githubusercontent.com/thegoldenmule/godot-addons/main/addons/editor_tool_kit/plugin.cfg"
 ## Branch tarball (redirects to codeload; HTTPRequest follows with max_redirects).
-const ARCHIVE_URL := "https://github.com/thegoldenmule/godot-editor-tk/archive/refs/heads/main.zip"
+const ARCHIVE_URL := "https://github.com/thegoldenmule/godot-addons/archive/refs/heads/main.zip"
 
 const LOCAL_CFG_PATH := "res://addons/editor_tool_kit/plugin.cfg"
 const UPDATE_TEMP_DIR := "user://editor_tool_kit_update/"
