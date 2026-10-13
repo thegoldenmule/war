@@ -1,8 +1,9 @@
-# ADR-4: Pure rules logic as static class_name utilities, not autoloads
+# Pure rules logic as static class_name utilities, not autoloads
 
 **Status:** accepted
 
 ## Metadata
+- **Number:** ADR-4
 - **Date:** 2026-06-17
 - **Scope:** client/logic
 

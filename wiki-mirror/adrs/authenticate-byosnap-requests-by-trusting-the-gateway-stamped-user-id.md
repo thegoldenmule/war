@@ -1,8 +1,9 @@
-# ADR-9: Authenticate BYOSnap requests by trusting the gateway-stamped User-Id
+# Authenticate BYOSnap requests by trusting the gateway-stamped User-Id
 
 **Status:** accepted
 
 ## Metadata
+- **Number:** ADR-9
 - **Date:** 2026-06-17
 - **Scope:** auth
 

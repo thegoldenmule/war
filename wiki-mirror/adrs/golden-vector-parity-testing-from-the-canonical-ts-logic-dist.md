@@ -1,8 +1,9 @@
-# ADR-5: Golden-vector parity testing from the canonical TS logic dist
+# Golden-vector parity testing from the canonical TS logic dist
 
 **Status:** accepted
 
 ## Metadata
+- **Number:** ADR-5
 - **Date:** 2026-06-17
 - **Scope:** testing
 

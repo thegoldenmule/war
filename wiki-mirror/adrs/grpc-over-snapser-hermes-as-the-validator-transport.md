@@ -1,8 +1,9 @@
-# ADR-7: gRPC over Snapser Hermes as the validator transport
+# gRPC over Snapser Hermes as the validator transport
 
 **Status:** accepted
 
 ## Metadata
+- **Number:** ADR-7
 - **Date:** 2026-06-17
 - **Scope:** transport
 

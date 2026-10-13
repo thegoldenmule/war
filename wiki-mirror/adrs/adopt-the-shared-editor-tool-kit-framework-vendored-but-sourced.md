@@ -1,8 +1,9 @@
-# ADR-11: Adopt the shared editor_tool_kit framework (vendored-but-sourced)
+# Adopt the shared editor_tool_kit framework (vendored-but-sourced)
 
 **Status:** accepted
 
 ## Metadata
+- **Number:** ADR-11
 - **Date:** 2026-06-17
 - **Scope:** tooling
 

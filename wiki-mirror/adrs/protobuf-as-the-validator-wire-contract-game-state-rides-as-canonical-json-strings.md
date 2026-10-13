@@ -1,8 +1,9 @@
-# ADR-6: Protobuf as the validator wire contract; game state rides as canonical-JSON strings
+# Protobuf as the validator wire contract; game state rides as canonical-JSON strings
 
 **Status:** accepted
 
 ## Metadata
+- **Number:** ADR-6
 - **Date:** 2026-06-17
 - **Scope:** wire
 

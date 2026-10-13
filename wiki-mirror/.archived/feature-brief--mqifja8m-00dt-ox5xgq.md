@@ -1,4 +1,4 @@
-# Feature: The I-Declare-War Moment
+# The I-Declare-War Moment
 
 **Status:** draft
 

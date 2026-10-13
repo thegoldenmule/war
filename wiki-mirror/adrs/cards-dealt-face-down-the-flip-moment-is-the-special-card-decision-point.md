@@ -1,8 +1,9 @@
-# ADR-12: Cards dealt face-down: the flip moment is the Special-Card decision point
+# Cards dealt face-down: the flip moment is the Special-Card decision point
 
 **Status:** accepted
 
 ## Metadata
+- **Number:** ADR-12
 - **Date:** 2026-06-17
 - **Scope:** design
 

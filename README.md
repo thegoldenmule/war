@@ -16,7 +16,7 @@ The top-level directories are **independent projects**, each with its own toolch
 | `game/` | The Godot 4.6 (GDScript) client + the pure deterministic rules engine (`game/logic/`) | Godot 4.6.x |
 | `validator/` | Authoritative move-validation service; deployable as a Snapser BYOSnap | Bun + Hono + gRPC (protos in `validator/protos/`) |
 | `tools/` | Workspace scripts: run the validator, export the client, regenerate protobuf bindings | Bash + Bun + Godot |
-| `wiki/` | **Emitted mirror** of the *Game: War* architecture wiki (read-only on disk) | served via the `wiki` MCP |
+| `wiki-mirror/` | **Emitted mirror** of the *Game: War* architecture wiki (read-only on disk) | served via the `wiki` MCP |
 
 ## The one idea everything rests on
 
@@ -48,7 +48,7 @@ input → action → logic/ (pure) → new state + hash → render
 | Architecture, phase status, per-subsystem source-of-truth map, the parity-test loop | [`game/ARCHITECTURE.md`](game/ARCHITECTURE.md) |
 | Godot/GDScript working notes, the headless parity-verifier loop, gotchas | [`game/CLAUDE.md`](game/CLAUDE.md) |
 | Guidance for Claude Code working anywhere in this repo | [`CLAUDE.md`](CLAUDE.md) |
-| The emitted architecture wiki (ADRs + subsystem docs) | [`wiki/README.md`](wiki/README.md) |
+| The emitted architecture wiki (ADRs + subsystem docs) | [`wiki-mirror/README.md`](wiki-mirror/README.md) |
 | Workspace tooling (run validator, export builds, regenerate protos) | [`tools/`](tools/) |
 
 ## Quick start

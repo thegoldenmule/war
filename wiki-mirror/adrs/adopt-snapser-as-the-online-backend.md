@@ -1,8 +1,9 @@
-# ADR-8: Adopt Snapser as the online backend
+# Adopt Snapser as the online backend
 
 **Status:** accepted
 
 ## Metadata
+- **Number:** ADR-8
 - **Date:** 2026-06-17
 - **Scope:** backend
 

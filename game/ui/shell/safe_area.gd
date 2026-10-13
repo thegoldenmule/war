@@ -3,7 +3,7 @@ extends RefCounted
 ## WarSafeArea — the single source of truth for converting the device safe area
 ## (notch / status bar / home indicator / gesture bar) into LOGICAL inset px for the
 ## current window. Implements rule 5 of the mobile-first layout gate
-## (wiki/game-war/design/mobile-first-ui-layout-best-practices.md): a full-screen
+## (wiki-mirror/design/mobile-first-ui-layout-best-practices.md): a full-screen
 ## TAKEOVER (the match scene, a story map) owns the raw viewport edge-to-edge — the
 ## shell's safe-area handling is gone with the hidden bands — so it must inset its own
 ## header for the top notch and its own footer for the bottom home indicator itself.

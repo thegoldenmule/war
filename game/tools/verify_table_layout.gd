@@ -1,6 +1,6 @@
 extends SceneTree
 ## VERIFY table_layout — the gameplay screen's LAYOUT GATE, checked as geometry, not
-## pixels (per wiki/game-war/design/mobile-first-ui-layout-best-practices.md: drive the
+## pixels (per wiki-mirror/design/mobile-first-ui-layout-best-practices.md: drive the
 ## screen headless and assert each control's get_global_rect() fits the reference surface
 ## and no band overlaps another). Headless renders to the project's 720x1560 surface with
 ## the safe-area insets at 0, so any overflow here is a width/height-budget bug.

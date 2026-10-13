@@ -1,8 +1,9 @@
-# ADR-10: Design the game to be driven and verified by an LLM
+# Design the game to be driven and verified by an LLM
 
 **Status:** accepted
 
 ## Metadata
+- **Number:** ADR-10
 - **Date:** 2026-06-17
 - **Scope:** tooling
 

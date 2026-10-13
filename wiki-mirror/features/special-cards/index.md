@@ -1,4 +1,4 @@
-# Feature: Special Cards
+# Special Cards
 
 **Status:** draft
 

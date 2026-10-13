@@ -1,8 +1,9 @@
-# ADR-1: Byte-for-byte determinism parity between the GDScript engine and the TS validator
+# Byte-for-byte determinism parity between the GDScript engine and the TS validator
 
 **Status:** accepted
 
 ## Metadata
+- **Number:** ADR-1
 - **Date:** 2026-06-17
 - **Scope:** engine/validator
 

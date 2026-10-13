@@ -1,8 +1,9 @@
-# ADR-3: Hard wall between deterministic logic and presentation
+# Hard wall between deterministic logic and presentation
 
 **Status:** accepted
 
 ## Metadata
+- **Number:** ADR-3
 - **Date:** 2026-06-17
 - **Scope:** client
 

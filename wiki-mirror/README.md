@@ -1,4 +1,4 @@
-# wiki/ — emitted mirror
+# wiki-mirror/ — emitted mirror
 
 This directory is an **emitted mirror** of the **"Game: War"** wiki workspace (the structured
 architecture wiki: ADRs + subsystem docs). It is **not** the source of truth and is **read-only
@@ -12,9 +12,10 @@ The wiki content lives in a structured workspace served by the **`wiki` MCP serv
 workspace:
 
 ```
-wiki/
-  game-war/                 the emitted markdown pages (one .md per wiki page)
-  game-war/.wiki-md-manifest.json   the emitter's manifest (page → file map, ordering, metadata)
+wiki-mirror/
+  README.md                 this file (hand-written; the emitter leaves it alone)
+  *.md, */index.md          the emitted markdown pages (one .md per wiki page)
+  .wiki-md-manifest.json    the emitter's manifest (page → file map, ordering, metadata)
 ```
 
 - **Read these files freely** — they are a faithful, browseable snapshot of the wiki for grep,
@@ -31,7 +32,7 @@ Edit through the **`wiki` MCP**, not the files:
 - Inspect a page's legal commands first with `describeMutations` / `describePageType`; the wiki
   is self-directing (each write echoes a `next`; `nextActions` rolls up what to do next).
 
-After a write, the on-disk `wiki/game-war/*.md` regenerates automatically — no manual sync.
+After a write, the on-disk `wiki-mirror/**/*.md` regenerates automatically — no manual sync.
 
 ## What's in it
 

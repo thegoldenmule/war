@@ -1,4 +1,4 @@
-# Feature: Daily Login Bonus
+# Daily Login Bonus
 
 **Status:** draft
 

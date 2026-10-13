@@ -1,4 +1,4 @@
-# Feature: Core Play Loop
+# Core Play Loop
 
 **Status:** shipped
 
