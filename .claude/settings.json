@@ -1,0 +1,13 @@
+{
+  "enabledPlugins": {
+    "hotseat@hotseat": true
+  },
+  "extraKnownMarketplaces": {
+    "hotseat": {
+      "source": {
+        "source": "github",
+        "repo": "Goldenmule-Media/hotseat-web"
+      }
+    }
+  }
+}
