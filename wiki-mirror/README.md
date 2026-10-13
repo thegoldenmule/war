@@ -1,15 +1,15 @@
 # wiki-mirror/ — emitted mirror
 
-This directory is an **emitted mirror** of the **"Game: War"** wiki workspace (the structured
-architecture wiki: ADRs + subsystem docs). It is **not** the source of truth and is **read-only
+This directory is an **emitted mirror** of the **War** page in the shared **Sovereign Axe** wiki
+workspace (the structured architecture wiki: ADRs + subsystem docs). It is **not** the source of truth and is **read-only
 on disk**.
 
 ## How it works
 
 The wiki content lives in a structured workspace served by the **`wiki` MCP server** at
-`https://hotseat.thegoldenmule.com/mcp` (workspace **"Game: War"**, id pinned in
-`../hotseat.config.json`). A live emitter regenerates this directory on **every change** to the
-workspace:
+`https://hotseat.thegoldenmule.com/mcp` (workspace **Sovereign Axe**, page **War**, both pinned
+in `../hotseat.config.json`). The local mirror service regenerates this directory on **every
+change** under War:
 
 ```
 wiki-mirror/
@@ -28,7 +28,7 @@ wiki-mirror/
 Edit through the **`wiki` MCP**, not the files:
 
 - Read: `getPage`, `renderPage`, `tree`, `search`, `outline`.
-- Write: `createPage`, `mutatePage` / `mutatePageBatch`, `link` / `unlink`, `setPageTitle`, …
+- Write: `createPage` (with `parentId` under War, never the workspace root), `mutatePage` / `mutatePageBatch`, `link` / `unlink`, `setPageTitle`, …
 - Inspect a page's legal commands first with `describeMutations` / `describePageType`; the wiki
   is self-directing (each write echoes a `next`; `nextActions` rolls up what to do next).
 

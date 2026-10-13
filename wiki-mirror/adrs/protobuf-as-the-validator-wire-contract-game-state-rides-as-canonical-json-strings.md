@@ -3,7 +3,7 @@
 **Status:** accepted
 
 ## Metadata
-- **Number:** ADR-6
+- **Number:** ADR-34
 - **Date:** 2026-06-17
 - **Scope:** wire
 

@@ -3,7 +3,7 @@
 **Status:** accepted
 
 ## Metadata
-- **Number:** ADR-9
+- **Number:** ADR-37
 - **Date:** 2026-06-17
 - **Scope:** auth
 

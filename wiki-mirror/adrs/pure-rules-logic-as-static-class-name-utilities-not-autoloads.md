@@ -3,7 +3,7 @@
 **Status:** accepted
 
 ## Metadata
-- **Number:** ADR-4
+- **Number:** ADR-32
 - **Date:** 2026-06-17
 - **Scope:** client/logic
 

@@ -3,7 +3,7 @@
 **Status:** accepted
 
 ## Metadata
-- **Number:** ADR-8
+- **Number:** ADR-36
 - **Date:** 2026-06-17
 - **Scope:** backend
 

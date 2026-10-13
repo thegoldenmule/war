@@ -16,7 +16,7 @@ directories are **independent projects**, each with its own toolchain:
 | `game/` | The Godot 4.6 (GDScript) client + the pure rules engine (`game/logic/`) | Godot 4.6.x |
 | `validator/` | Authoritative move-validation service (Snapser BYOSnap) | Bun + Hono + gRPC |
 | `tools/` | Workspace scripts (run validator, export client, regenerate protos) | Bash + Bun + Godot |
-| `wiki-mirror/` | Emitted mirror of the *Game: War* architecture wiki | served via the `wiki` MCP |
+| `wiki-mirror/` | Emitted mirror of the *Sovereign Axe › War* wiki page | served via the `wiki` MCP |
 
 ## The one idea everything rests on
 
@@ -54,13 +54,16 @@ Don't restate the architecture here — read the canonical pages:
 | Architecture, phase status, per-subsystem source-of-truth map, parity-test loop | `game/ARCHITECTURE.md` |
 | Godot/GDScript working notes + gotchas + the headless parity-verifier loop | `game/CLAUDE.md` |
 | The validator wire (gRPC/Hermes/MCP), ports, history replay | `validator/` (+ its README) |
-| Design rationale + subsystem docs (ADRs) | the *Game: War* wiki (see `wiki-mirror/README.md`) |
+| Design rationale + subsystem docs (ADRs) | *Sovereign Axe › War* in the wiki (see `wiki-mirror/README.md`) |
 
-> The `wiki-mirror/` markdown is an **emitted mirror** of the *Game: War* workspace, served by the
-> `wiki` MCP server (`https://hotseat.thegoldenmule.com/mcp`). **Edit wiki content through the
-> MCP** (`mutatePage` / `mutatePageBatch`), never by hand: a live emitter regenerates the `.md`
-> files + `.wiki-md-manifest.json` from the workspace on every change, so direct edits get
-> overwritten. Read the files freely; treat them as read-only on disk.
+> **Wiki.** War's docs, ADRs and features live in the shared **Sovereign Axe** workspace
+> (`ws:mv72wvay-00gz-t90t1h`) under **War** (`toc:mv72x0ma-00hb-a0qurk`), via the `wiki` MCP
+> (`https://hotseat.thegoldenmule.com/mcp`). Create pages only under War or its children
+> (`parentId`), never at the workspace root or under another game. `hotseat.config.json` pins this
+> (`workspaceId` + `rootPageId`), and the hotseat skills read it. **Core Tech**
+> (`toc:mv72wync-00h1-19nh5n`, shared engine and addons) and **Studio** (`toc:mv770s8o-004h-12oesi`,
+> studio-wide conventions) are readable and linkable. `wiki-mirror/` is a read-only local projection
+> of War that the mirror service keeps current: read it freely, never edit it by hand.
 
 ## Commands
 
@@ -116,8 +119,8 @@ never re-model them as proto messages). Auth: the gateway stamps a `User-Id` bou
 
 `.mcp.json` registers:
 
-- **`wiki`** (`https://hotseat.thegoldenmule.com/mcp`) — the structured *Game: War* architecture
-  wiki / ADRs. Edit content here; the on-disk `wiki-mirror/` mirror regenerates.
+- **`wiki`** (`https://hotseat.thegoldenmule.com/mcp`) — the structured wiki; War lives under
+  *Sovereign Axe › War*. Edit content here; the on-disk `wiki-mirror/` mirror regenerates.
 - **`snapser`** (`npx @snapser/mcp-server-snapser`) — the Snapser platform.
 - The **`godot-ai`** MCP (bundled under `game/addons/`) drives the Godot editor/game when open.
 - The validator exposes an **MCP** at `:5555/mcp` for inspecting/debugging match state once it

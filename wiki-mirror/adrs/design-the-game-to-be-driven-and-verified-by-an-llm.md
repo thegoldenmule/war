@@ -3,7 +3,7 @@
 **Status:** accepted
 
 ## Metadata
-- **Number:** ADR-10
+- **Number:** ADR-38
 - **Date:** 2026-06-17
 - **Scope:** tooling
 

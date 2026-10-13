@@ -3,7 +3,7 @@
 **Status:** accepted
 
 ## Metadata
-- **Number:** ADR-12
+- **Number:** ADR-40
 - **Date:** 2026-06-17
 - **Scope:** design
 

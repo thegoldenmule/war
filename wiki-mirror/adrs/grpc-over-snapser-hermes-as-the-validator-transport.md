@@ -3,7 +3,7 @@
 **Status:** accepted
 
 ## Metadata
-- **Number:** ADR-7
+- **Number:** ADR-35
 - **Date:** 2026-06-17
 - **Scope:** transport
 

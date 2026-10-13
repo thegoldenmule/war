@@ -3,7 +3,7 @@
 **Status:** accepted
 
 ## Metadata
-- **Number:** ADR-2
+- **Number:** ADR-30
 - **Date:** 2026-06-17
 - **Scope:** client/validator
 

@@ -3,7 +3,7 @@
 **Status:** accepted
 
 ## Metadata
-- **Number:** ADR-5
+- **Number:** ADR-33
 - **Date:** 2026-06-17
 - **Scope:** testing
 

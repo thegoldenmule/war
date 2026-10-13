@@ -3,7 +3,7 @@
 **Status:** accepted
 
 ## Metadata
-- **Number:** ADR-3
+- **Number:** ADR-31
 - **Date:** 2026-06-17
 - **Scope:** client
 

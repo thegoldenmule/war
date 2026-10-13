@@ -3,7 +3,7 @@
 **Status:** accepted
 
 ## Metadata
-- **Number:** ADR-1
+- **Number:** ADR-29
 - **Date:** 2026-06-17
 - **Scope:** engine/validator
 
